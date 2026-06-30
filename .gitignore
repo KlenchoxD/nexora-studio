@@ -1,0 +1,15 @@
+# deps / build output
+node_modules/
+app/node_modules/
+app/dist/
+app/src-tauri/target/
+app/src-tauri/gen/schemas/
+
+# firma del updater (NUNCA subir la clave privada)
+*.key
+*.key.pub
+
+# logs / misc
+*.log
+.DS_Store
+Thumbs.db

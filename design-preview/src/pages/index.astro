@@ -1,0 +1,226 @@
+---
+import Shell from '../components/Shell.astro';
+import Icon from '../components/Icon.astro';
+
+const now = [
+  { name: 'Codex', icon: 'cpu', c: 'var(--codex)', task: 'Backend de autenticación', file: 'middleware.ts', pct: 65 },
+  { name: 'Claude', icon: 'sparkle', c: 'var(--claude)', task: 'Interfaz de Login', file: 'Button.tsx', pct: 42 },
+];
+const recent = [
+  { who: 'Codex', c: 'var(--codex)', t: 'Contrato de API definido', st: 'done' },
+  { who: 'Codex', c: 'var(--codex)', t: 'Migración · tabla users', st: 'done' },
+  { who: 'Claude', c: 'var(--claude)', t: 'Login.tsx creado', st: 'done' },
+  { who: 'Claude', c: 'var(--claude)', t: 'Documentar API de auth', st: 'queue' },
+];
+---
+<Shell active="dashboard" crumb="nexora-app" branch="feat/google-oauth">
+  <div class="layout">
+    <section class="conv">
+      <div class="thread">
+        <div class="inner">
+
+          <div class="turn user"><div class="ubub">Implementa autenticación con Google.</div></div>
+
+          <article class="turn">
+            <div class="head"><span class="av nx">N</span><span class="nm">Orquestador</span><span class="when num">16:02</span></div>
+            <div class="content">
+              <p>Lo dividí en cuatro fases y asigné cada parte al agente que mejor encaja. Defino el contrato de la API primero, para que el backend y el frontend avancen en paralelo sin pisarse.</p>
+              <div class="plan">
+                <div class="plan-h"><span class="label">Plan · 4 fases</span></div>
+                <div class="prow"><span class="pn num">01</span><span class="pt">Contrato de API — tipos y endpoints</span><span class="asg"><i class="d cx"></i>Codex</span></div>
+                <div class="prow"><span class="pn num">02</span><span class="pt">Backend, tablas y middleware</span><span class="asg"><i class="d cx"></i>Codex</span></div>
+                <div class="prow"><span class="pn num">02</span><span class="pt">UI de Login y botones</span><span class="asg"><i class="d cl"></i>Claude</span></div>
+                <div class="prow"><span class="pn num">03</span><span class="pt">Tests y documentación</span><span class="asg"><i class="d cl"></i>Claude</span></div>
+              </div>
+              <div class="acts"><button class="btn primary">Empezar</button><button class="btn">Ajustar plan</button></div>
+            </div>
+          </article>
+
+          <div class="rule"><span>Plan aprobado · 2 worktrees creados</span></div>
+
+          <article class="turn">
+            <div class="head"><span class="av cx">C</span><span class="nm" style="color:var(--codex)">Codex</span><span class="status">trabajando</span><span class="when num">16:03</span></div>
+            <div class="content"><p>Arranco por el contrato y el backend. Aviso a <span style="color:var(--claude);font-weight:500">@Claude</span> en cuanto los endpoints estén firmes.</p></div>
+          </article>
+
+          <article class="turn">
+            <div class="head"><span class="av cl">A</span><span class="nm" style="color:var(--claude)">Claude</span><span class="status idle">en espera</span><span class="when num">16:03</span></div>
+            <div class="content"><p>Voy preparando la maqueta del formulario mientras llega el contrato.</p></div>
+          </article>
+
+          <article class="turn">
+            <div class="head"><span class="av cx">C</span><span class="nm" style="color:var(--codex)">Codex</span><span class="when num">16:07</span></div>
+            <div class="content">
+              <p>Contrato listo, <span style="color:var(--claude);font-weight:500">@Claude</span> ya puedes conectar el frontend.</p>
+              <figure class="code">
+                <figcaption><span class="mono">api/auth.contract.ts</span><span class="label">typescript</span></figcaption>
+                <pre><span class="kw">POST</span> /login    <span class="cm">→ &#123; token: string &#125;</span>
+<span class="kw">POST</span> /logout   <span class="cm">→ 204 No Content</span></pre>
+              </figure>
+            </div>
+          </article>
+
+          <article class="turn">
+            <div class="head"><span class="av cl">A</span><span class="nm" style="color:var(--claude)">Claude</span><span class="status">trabajando</span><span class="when num">16:08</span></div>
+            <div class="content"><p>Recibido. Conectando <code>Login.tsx</code> contra <code>POST /login</code> y construyendo los estados de error.</p></div>
+          </article>
+
+          <article class="turn">
+            <div class="head"><span class="av cx">C</span><span class="nm" style="color:var(--codex)">Codex</span><span class="when num">16:11</span></div>
+            <div class="content">
+              <p>Backend y middleware terminados. Dejé el diff en mi worktree — necesito tu visto bueno para integrarlo a <code>feat/google-oauth</code>.</p>
+              <div class="acts"><button class="btn">Ver diff · 4 archivos</button><button class="btn primary">Aprobar merge</button></div>
+            </div>
+          </article>
+
+          <article class="turn">
+            <div class="head"><span class="av cl">A</span><span class="nm" style="color:var(--claude)">Claude</span></div>
+            <div class="content"><div class="typing"><span></span><span></span><span></span></div></div>
+          </article>
+
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="cwrap">
+          <div class="box">
+            <textarea rows="1" placeholder="Escribe al equipo…"></textarea>
+            <div class="cbar">
+              <div class="to">
+                <button class="seg active">Auto</button>
+                <button class="seg">Codex</button>
+                <button class="seg">Claude</button>
+                <button class="seg">Ambos</button>
+              </div>
+              <button class="send" aria-label="Enviar"><Icon name="arrowRight" cls="icon sm" /></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section>
+        <div class="label sh">Ahora mismo</div>
+        <div class="now">
+          {now.map(a => (
+            <div class="liverow" style={`--c:${a.c}`}>
+              <div class="lt"><span class="nm2"><i class="d" style={`background:${a.c}`}></i>{a.name}</span><span class="pct num">{a.pct}%</span></div>
+              <div class="ltask">{a.task}</div>
+              <div class="track"><span style={`width:${a.pct}%;background:${a.c}`}></span></div>
+              <div class="lfile mono">{a.file}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div class="label sh">Tareas recientes</div>
+        <div class="rlist">
+          {recent.map(r => (
+            <div class="ri">
+              <span class="d" style={r.st==='done' ? 'background:var(--running)' : 'background:var(--idle)'}></span>
+              <span class="rit">{r.t}</span>
+              <span class="riw" style={`color:${r.c}`}>{r.who}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </aside>
+  </div>
+</Shell>
+
+<style>
+  .layout { height: 100%; display: grid; grid-template-columns: minmax(0,1fr) 300px; }
+  .conv { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-right: 1px solid var(--line-soft); }
+
+  /* thread scrolls; composer stays pinned */
+  .thread { flex: 1; min-height: 0; overflow-y: auto; }
+  .inner { max-width: 700px; margin: 0 auto; padding: 40px 32px 24px; }
+
+  .turn { padding-bottom: 26px; }
+  .head { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .av { width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; font-weight: 600; font-size: 11px; flex-shrink: 0; }
+  .av.nx { background: var(--fg); color: var(--bg); }
+  .av.cx { background: var(--codex-soft); color: var(--codex); }
+  .av.cl { background: var(--claude-soft); color: var(--claude); }
+  .nm { font-weight: 600; font-size: 13.5px; letter-spacing: -.01em; }
+  .status { font-size: 11.5px; color: var(--running); }
+  .status.idle { color: var(--fg-faint); }
+  .when { font-size: 11.5px; color: var(--fg-faint); margin-left: auto; }
+
+  .content { padding-left: 34px; }
+  .content p { margin: 0; font-size: 15px; line-height: 1.68; color: var(--fg); }
+  .content p + * { margin-top: 14px; }
+  code { font-family: var(--mono); font-size: 12.5px; background: var(--muted); padding: 1px 6px; border-radius: var(--r-xs); color: #d9cbb0; }
+
+  .turn.user { display: flex; justify-content: flex-end; padding-bottom: 30px; }
+  .ubub { background: var(--surface-2); padding: 12px 17px; border-radius: var(--r-xl); border-bottom-right-radius: var(--r-sm); font-size: 15px; line-height: 1.55; max-width: 80%; color: var(--fg); }
+
+  /* plan — editorial list */
+  .plan { background: var(--bg-elev); border: 1px solid var(--line-soft); border-radius: var(--r-lg); overflow: hidden; }
+  .plan-h { padding: 11px 16px 9px; border-bottom: 1px solid var(--line-soft); }
+  .prow { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 12px; padding: 11px 16px; border-top: 1px solid var(--line-soft); }
+  .prow:nth-of-type(2) { border-top: none; }
+  .pn { font-family: var(--mono); font-size: 12px; color: var(--fg-faint); }
+  .pt { font-size: 14px; color: var(--fg-dim); }
+  .asg { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg-dim); }
+  .d { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .d.cx { background: var(--codex); } .d.cl { background: var(--claude); }
+
+  .acts { display: flex; gap: 9px; }
+  .acts .btn { padding: 7px 14px; font-size: 13px; }
+
+  .rule { display: flex; align-items: center; gap: 16px; padding: 4px 0 28px; }
+  .rule::before, .rule::after { content: ""; height: 1px; flex: 1; background: var(--line-soft); }
+  .rule span { font-size: 11.5px; color: var(--fg-faint); }
+
+  /* code block */
+  .code { margin: 0; border: 1px solid var(--line-soft); border-radius: var(--r-lg); overflow: hidden; }
+  .code figcaption { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--line-soft); }
+  .code figcaption .mono { font-size: 11.5px; color: var(--fg-dim); }
+  .code pre { margin: 0; padding: 13px 16px; background: var(--bg-elev); font-family: var(--mono); font-size: 12.5px; line-height: 1.75; color: var(--fg-dim); overflow: auto; }
+  .kw { color: var(--codex); } .cm { color: var(--fg-faint); }
+
+  .typing { display: inline-flex; gap: 5px; padding: 3px 0; }
+  .typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--claude); opacity: .4; animation: td 1.3s var(--ease) infinite; }
+  .typing span:nth-child(2){animation-delay:.18s} .typing span:nth-child(3){animation-delay:.36s}
+  @keyframes td { 0%,65%,100%{opacity:.3;transform:translateY(0)} 32%{opacity:.9;transform:translateY(-3px)} }
+
+  /* composer — pinned */
+  .composer { flex-shrink: 0; border-top: 1px solid var(--line-soft); background: var(--bg); padding: 14px 32px 16px; }
+  .cwrap { max-width: 700px; margin: 0 auto; }
+  .box { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-xl); padding: 13px 14px 11px; transition: border-color .15s var(--ease); }
+  .box:focus-within { border-color: #4a4234; }
+  textarea { width: 100%; background: transparent; border: none; outline: none; resize: none; color: var(--fg); font-family: inherit; font-size: 15px; line-height: 1.55; max-height: 140px; }
+  textarea::placeholder { color: var(--fg-faint); }
+  .cbar { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .to { display: inline-flex; gap: 2px; background: var(--bg-elev); border: 1px solid var(--line-soft); border-radius: var(--r); padding: 2px; }
+  .seg { font-size: 12px; color: var(--fg-faint); background: transparent; border: none; padding: 4px 12px; border-radius: var(--r-sm); transition: all .15s var(--ease); }
+  .seg:hover { color: var(--fg-dim); }
+  .seg.active { background: var(--surface-2); color: var(--fg); font-weight: 500; }
+  .send { background: var(--fg); color: var(--bg); border: none; border-radius: var(--r); width: 34px; height: 30px; display: grid; place-items: center; transition: opacity .15s; }
+  .send:hover { background: #fff; }
+
+  /* right rail */
+  .side { background: var(--bg); overflow-y: auto; padding: 26px 18px; display: flex; flex-direction: column; gap: 30px; }
+  .sh { display: block; margin-bottom: 15px; }
+  .now { display: flex; flex-direction: column; }
+  .liverow { padding: 13px 0; border-top: 1px solid var(--line-soft); }
+  .liverow:first-child { border-top: none; padding-top: 0; }
+  .lt { display: flex; align-items: center; justify-content: space-between; }
+  .nm2 { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+  .pct { font-size: 11.5px; color: var(--fg-faint); }
+  .ltask { font-size: 12.5px; color: var(--fg-dim); margin: 7px 0 9px; }
+  .track { height: 3px; background: var(--muted); border-radius: 3px; overflow: hidden; }
+  .track span { display: block; height: 100%; }
+  .lfile { font-size: 11px; color: var(--fg-faint); margin-top: 9px; }
+
+  .rlist { display: flex; flex-direction: column; }
+  .ri { display: flex; align-items: center; gap: 11px; padding: 11px 0; font-size: 13px; border-top: 1px solid var(--line-soft); }
+  .ri:first-child { border-top: none; padding-top: 0; }
+  .rit { flex: 1; color: var(--fg-dim); }
+  .riw { font-size: 11px; font-weight: 600; }
+
+  @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } .side { display: none; } }
+</style>

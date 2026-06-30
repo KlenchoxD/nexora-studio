@@ -1,0 +1,55 @@
+---
+import Icon from './Icon.astro';
+import '../styles/global.css';
+const { active = 'dashboard', crumb = 'nexora-app', branch = 'main' } = Astro.props;
+const nav = [
+  { id: 'dashboard', href: '/', icon: 'chat', label: 'Conversación' },
+  { id: 'workspace', href: '/workspace', icon: 'workspace', label: 'Workspace' },
+  { id: 'agents', href: '/agents', icon: 'agents', label: 'Agentes' },
+];
+---
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nexora Studio</title>
+</head>
+<body>
+  <div class="app">
+    <header class="titlebar">
+      <div class="brand"><span class="mark">N</span> Nexora</div>
+      <div class="crumbs">
+        <span class="proj">{crumb}</span>
+        <span class="sep">/</span>
+        <span class="branch">{branch}</span>
+      </div>
+      <div class="spacer"></div>
+      <span class="tb-stat"><span class="dot run"></span> 2 agentes</span>
+      <span class="tb-div"></span>
+      <span class="tb-stat mono num">38.4k tok · $0.42</span>
+      <span class="tb-div"></span>
+      <button class="iconbtn"><Icon name="bell" cls="icon sm" /></button>
+    </header>
+
+    <div class="shell-body">
+      <nav class="rail">
+        {nav.map(n => (
+          <a href={n.href} class={n.id === active ? 'active' : ''} title={n.label}><Icon name={n.icon} /></a>
+        ))}
+        <span class="grow"></span>
+        <a href="#" title="Ajustes"><Icon name="settings" /></a>
+      </nav>
+      <main class="main"><slot /></main>
+    </div>
+
+    <footer class="statusbar">
+      <span class="s"><Icon name="branch" cls="icon sm" /> {branch}</span>
+      <span class="s">3 worktrees</span>
+      <span class="spacer"></span>
+      <span class="s">Codex 1.96 · Claude Code</span>
+      <span class="s">sin conflictos</span>
+    </footer>
+  </div>
+</body>
+</html>

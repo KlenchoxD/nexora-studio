@@ -1,0 +1,134 @@
+/* Nexora Studio — design system
+   Direction: quiet, editorial, precise. Warm-ink dark. One accent. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* warm ink scale */
+  --bg:        #14130F;
+  --bg-elev:   #1A1814;
+  --surface:   #201D18;
+  --surface-2: #29251F;
+  --muted:     #2F2A23;
+  --line:      #353027;   /* primary border */
+  --line-soft: #28241E;   /* hairline */
+
+  --fg:        #EDE9DF;   /* warm off-white */
+  --fg-dim:    #ABA496;   /* secondary */
+  --fg-faint:  #6E685B;   /* tertiary / labels */
+
+  /* status (muted, never neon) */
+  --running: #6FA76B;
+  --idle:    #6E685B;
+  --error:   #C5564B;
+  --warn:    #C9A24B;
+
+  /* agent identity — muted, editorial */
+  --codex:      #7FA6AE;        /* steel teal */
+  --codex-soft: rgba(127,166,174,.13);
+  --claude:     #C08457;        /* clay */
+  --claude-soft: rgba(192,132,87,.13);
+
+  /* one accent, used sparingly */
+  --accent: #D7A94B;            /* brass */
+
+  --r-xs: 5px; --r-sm: 7px; --r: 9px; --r-lg: 13px; --r-xl: 18px;
+
+  --rail: 56px;
+  --titlebar: 46px;
+  --statusbar: 28px;
+
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --ease: cubic-bezier(.22,.61,.36,1);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: var(--sans);
+  color: var(--fg);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: -0.011em;
+  font-feature-settings: "cv05" 1, "ss01" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+::selection { background: rgba(215,169,75,.22); }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; color: inherit; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-thumb { background: #322d25; border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #423b30; background-clip: content-box; }
+
+/* type helpers */
+.mono { font-family: var(--mono); font-feature-settings: "tnum" 1; }
+.label { font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-faint); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- App shell ---------- */
+.app { height: 100vh; display: grid; grid-template-rows: var(--titlebar) 1fr var(--statusbar); overflow: hidden; }
+
+.titlebar {
+  display: flex; align-items: center; gap: 16px; padding: 0 18px;
+  background: var(--bg); border-bottom: 1px solid var(--line-soft);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14.5px; letter-spacing: -0.02em; }
+.mark {
+  width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center;
+  background: var(--fg); color: var(--bg); font-weight: 700; font-size: 13px;
+}
+.crumbs { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--fg-faint); }
+.crumbs .proj { color: var(--fg-dim); }
+.crumbs .sep { opacity: .5; }
+.crumbs .branch { font-family: var(--mono); font-size: 12px; }
+.spacer { flex: 1; }
+.tb-stat { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--fg-dim); }
+.tb-stat .mono { color: var(--fg-dim); }
+.tb-div { width: 1px; height: 18px; background: var(--line); }
+.iconbtn { background: transparent; border: none; color: var(--fg-faint); width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; transition: all .15s var(--ease); }
+.iconbtn:hover { color: var(--fg); background: var(--surface-2); }
+
+.shell-body { display: grid; grid-template-columns: var(--rail) 1fr; min-height: 0; }
+
+.rail { background: var(--bg); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; }
+.rail a { width: 38px; height: 38px; border-radius: var(--r); display: grid; place-items: center; color: var(--fg-faint); transition: all .15s var(--ease); }
+.rail a:hover { color: var(--fg-dim); background: var(--surface); }
+.rail a.active { color: var(--fg); background: var(--surface-2); }
+.rail .grow { flex: 1; }
+
+.main { min-width: 0; min-height: 0; overflow: hidden; }
+
+.statusbar { display: flex; align-items: center; gap: 18px; padding: 0 16px; background: var(--bg); border-top: 1px solid var(--line-soft); font-size: 11px; color: var(--fg-faint); font-family: var(--mono); }
+.statusbar .s { display: inline-flex; align-items: center; gap: 7px; }
+.statusbar .spacer { flex: 1; }
+
+/* ---------- primitives ---------- */
+.dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dot.run { background: var(--running); }
+.dot.idle { background: var(--idle); }
+.dot.err { background: var(--error); }
+
+.card { background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r-lg); }
+
+.tag { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: var(--r-xs); background: var(--muted); color: var(--fg-dim); }
+
+.kbd { font-family: var(--mono); font-size: 10.5px; color: var(--fg-dim); background: var(--muted); border: 1px solid var(--line); padding: 1px 6px; border-radius: var(--r-xs); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; font-weight: 500; font-size: 13px;
+  padding: 8px 14px; border-radius: var(--r); border: 1px solid var(--line);
+  background: var(--surface); color: var(--fg-dim); transition: all .15s var(--ease);
+}
+.btn:hover { color: var(--fg); border-color: #443d31; background: var(--surface-2); }
+.btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 600; }
+.btn.primary:hover { background: #fff; color: var(--bg); }
+
+.icon { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.icon.sm { width: 15px; height: 15px; }
+.icon.lg { width: 21px; height: 21px; }
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

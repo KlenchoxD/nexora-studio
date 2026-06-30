@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Nexora Studio",
+  "version": "0.1.0",
+  "identifier": "studio.nexora.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nexora Studio",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 940,
+        "minHeight": 620,
+        "decorations": false,
+        "backgroundColor": "#0A0A0B"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEyQjIxMzFEOEU1QUU2NzgKUldSNDVscU9IUk95RXB0T0pQRE9kMU41K3BXZ0hvaklGWHlEaWhVR3IyaGs3dUNDQTBsL3kxamcK",
+      "endpoints": [
+        "https://github.com/KlenchoxD/nexora-studio/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

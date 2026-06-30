@@ -1,0 +1,7 @@
+﻿codex : Reading additional input from stdin...
+En línea: 1 Carácter: 321
++ ... | Out-Null; codex exec --json -s read-only -C $cap "Responde unicamen ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Reading additional input from stdin...:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

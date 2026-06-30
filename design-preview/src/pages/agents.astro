@@ -1,0 +1,143 @@
+---
+import Shell from '../components/Shell.astro';
+import Icon from '../components/Icon.astro';
+
+const agents = [
+  {
+    name: 'Codex', mark: 'C', c: 'var(--codex)', caps: ['backend','arquitectura','tests','refactor'],
+    task: 'Creando API de autenticación', pct: 65, wt: '.nexora/wt-codex', tok: '18.2k',
+    files: [['auth.ts','M'],['users.ts','A'],['middleware.ts','M']],
+    feed: [['tool','apply_patch · auth.ts (+24 −2)','ok'],['tool','shell · npm run typecheck','ok'],['msg','Definiendo contrato: POST /login, POST /logout',''],['tool','apply_patch · middleware.ts','run']],
+  },
+  {
+    name: 'Claude', mark: 'A', c: 'var(--claude)', caps: ['frontend','UI','debugging','docs','review'],
+    task: 'Construyendo interfaz de Login', pct: 42, wt: '.nexora/wt-claude', tok: '11.7k',
+    files: [['Login.tsx','A'],['Button.tsx','M'],['styles.css','M']],
+    feed: [['tool','write · Login.tsx','ok'],['msg','Esperando contrato de API…','wait'],['msg','Contrato recibido · usando POST /login',''],['tool','edit · Button.tsx','run']],
+  },
+];
+---
+<Shell active="agents" crumb="nexora-app" branch="feat/google-oauth">
+  <div class="page">
+    <header class="ph">
+      <div>
+        <h1>Agentes</h1>
+        <p class="sub">Quién hace qué, en tiempo real. Tú apruebas las integraciones.</p>
+      </div>
+      <div class="acts"><button class="btn">Capacidades</button><button class="btn primary">Asignar tarea</button></div>
+    </header>
+
+    <div class="review">
+      <div class="rv-l"><span class="label">Revisión pendiente</span>
+        <p>Codex terminó la API y se la pasó a Claude. Aprueba el merge a <code>feat/google-oauth</code> para integrar.</p>
+      </div>
+      <div class="acts"><button class="btn">Ver diff</button><button class="btn primary">Aprobar merge</button></div>
+    </div>
+
+    <div class="grid">
+      {agents.map(a => (
+        <article class="panel" style={`--c:${a.c}`}>
+          <header class="pa-head">
+            <span class="pa-mark">{a.mark}</span>
+            <div class="pa-id">
+              <div class="pa-name">{a.name}</div>
+              <div class="caps">{a.caps.map(c => <span class="cap">{c}</span>)}</div>
+            </div>
+            <span class="state"><span class="dot run"></span> Trabajando</span>
+          </header>
+
+          <div class="task">
+            <div class="tk-top"><span class="label">Tarea actual</span><span class="pct num">{a.pct}%</span></div>
+            <div class="tk-val">{a.task}</div>
+            <div class="track"><span style={`width:${a.pct}%;background:var(--c)`}></span></div>
+            <div class="wt mono">{a.wt}</div>
+          </div>
+
+          <div class="split">
+            <div>
+              <div class="label sl">Archivos · git status</div>
+              {a.files.map(([f,s]) => (
+                <div class="frow"><span class="fn mono">{f}</span><span class={`gs ${s==='A'?'add':'mod'}`}>{s}</span></div>
+              ))}
+            </div>
+            <div class="feed">
+              <div class="label sl">Actividad</div>
+              {a.feed.map(([k,t,s]) => (
+                <div class="erow">
+                  <span class={`ek ${s}`}>{k === 'tool' ? '›' : '·'}</span>
+                  <span class="et mono">{t}</span>
+                  {s === 'ok' && <span class="es ok">✓</span>}
+                  {s === 'run' && <span class="es">···</span>}
+                  {s === 'wait' && <span class="es wt2">espera</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <footer class="pf">
+            <button class="btn sm">Pausar</button>
+            <button class="btn sm">Cancelar</button>
+            <span class="flex"></span>
+            <span class="tok mono num">{a.tok} tok</span>
+          </footer>
+        </article>
+      ))}
+    </div>
+  </div>
+</Shell>
+
+<style>
+  .page { max-width: 1180px; margin: 0 auto; padding: 32px 36px 48px; height: 100%; overflow-y: auto; }
+  .ph { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 24px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.025em; margin: 0; }
+  .sub { color: var(--fg-dim); margin: 5px 0 0; font-size: 13.5px; }
+  .acts { display: flex; gap: 9px; }
+  .btn.sm { padding: 6px 12px; font-size: 12.5px; }
+
+  .review { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px; margin-bottom: 26px;
+    border: 1px solid var(--line); border-left: 2px solid var(--accent); border-radius: var(--r-lg); background: var(--bg-elev); }
+  .rv-l .label { color: var(--accent); }
+  .rv-l p { margin: 6px 0 0; font-size: 13.5px; color: var(--fg-dim); }
+  .review .acts { flex-shrink: 0; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .panel { border: 1px solid var(--line-soft); border-radius: var(--r-xl); padding: 22px; background: var(--surface); }
+
+  .pa-head { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 20px; }
+  .pa-mark { width: 38px; height: 38px; border-radius: var(--r); display: grid; place-items: center; font-weight: 700; font-size: 15px;
+    background: color-mix(in srgb, var(--c) 16%, transparent); color: var(--c); }
+  .pa-id { flex: 1; }
+  .pa-name { font-size: 16px; font-weight: 600; }
+  .caps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .cap { font-size: 10.5px; color: var(--fg-faint); border: 1px solid var(--line); padding: 2px 8px; border-radius: var(--r-xs); }
+  .state { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--running); }
+
+  .label.sl { display: block; margin-bottom: 11px; }
+  .task { padding: 15px 0; border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); margin-bottom: 18px; }
+  .tk-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; }
+  .pct { font-size: 11.5px; color: var(--fg-faint); }
+  .tk-val { font-size: 14px; color: var(--fg); margin-bottom: 11px; }
+  .track { height: 4px; background: var(--muted); border-radius: 4px; overflow: hidden; }
+  .track span { display: block; height: 100%; }
+  .wt { font-size: 11px; color: var(--fg-faint); margin-top: 10px; }
+
+  .split { display: grid; grid-template-columns: 1fr 1.3fr; gap: 22px; margin-bottom: 18px; }
+  .frow { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
+  .frow .fn { font-size: 12px; color: var(--fg-dim); }
+  .gs { font-family: var(--mono); font-size: 10px; font-weight: 700; }
+  .gs.add { color: var(--running); } .gs.mod { color: var(--warn); }
+
+  .feed { border-left: 1px solid var(--line-soft); padding-left: 22px; }
+  .erow { display: flex; align-items: center; gap: 9px; padding: 5px 0; }
+  .ek { font-family: var(--mono); color: var(--accent); width: 8px; }
+  .ek.wait { color: var(--warn); }
+  .et { flex: 1; font-size: 11px; color: var(--fg-dim); }
+  .es { font-size: 10.5px; color: var(--fg-faint); }
+  .es.ok { color: var(--running); } .es.wt2 { color: var(--warn); }
+
+  .pf { display: flex; align-items: center; gap: 9px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+  .flex { flex: 1; }
+  .tok { font-size: 11.5px; color: var(--fg-faint); }
+
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+</style>

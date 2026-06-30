@@ -1,0 +1,175 @@
+---
+import Shell from '../components/Shell.astro';
+import Icon from '../components/Icon.astro';
+
+const tree = [
+  { d: 0, t: 'folder', n: 'src' },
+  { d: 1, t: 'folder', n: 'auth' },
+  { d: 2, t: 'file', n: 'auth.ts', st: 'M', who: 'cx' },
+  { d: 2, t: 'file', n: 'middleware.ts', st: 'M', who: 'cx' },
+  { d: 2, t: 'file', n: 'users.ts', st: 'A', who: 'cx' },
+  { d: 1, t: 'folder', n: 'components' },
+  { d: 2, t: 'file', n: 'Login.tsx', st: 'A', who: 'cl' },
+  { d: 2, t: 'file', n: 'Button.tsx', st: 'M', who: 'cl' },
+  { d: 1, t: 'file', n: 'styles.css', st: 'M', who: 'cl' },
+  { d: 0, t: 'file', n: 'package.json' },
+  { d: 0, t: 'file', n: 'AGENTS.md' },
+];
+---
+<Shell active="workspace" crumb="nexora-app" branch="feat/google-oauth">
+  <div class="ws">
+    <!-- explorer -->
+    <aside class="pane explorer">
+      <div class="search"><Icon name="search" cls="icon sm" /><input placeholder="Buscar archivos" /></div>
+      <div class="px"><span class="label">Explorador</span><span class="tag">git status</span></div>
+      <div class="tree">
+        {tree.map(it => (
+          <div class="trow" style={`padding-left:${12 + it.d*15}px`}>
+            {it.t === 'folder'
+              ? <Icon name="folder" cls="icon sm fi" />
+              : <Icon name="file" cls="icon sm fi" />}
+            <span class="fn">{it.n}</span>
+            {it.st && <span class={`gs ${it.who}`}>{it.st}</span>}
+          </div>
+        ))}
+      </div>
+    </aside>
+
+    <!-- editor + terminal -->
+    <section class="pane editor">
+      <div class="tabs">
+        <div class="tab active">auth.ts</div>
+        <div class="tab">Login.tsx</div>
+        <div class="tab">Diff · worktree codex</div>
+        <span class="flex"></span>
+        <button class="iconbtn" title="Abrir en VS Code"><Icon name="code" cls="icon sm" /></button>
+      </div>
+
+      <div class="code-area">
+        <pre class="code"><span class="g">12</span>  <span class="kw">export async function</span> <span class="fn2">login</span>(req, res) {'{'}
+<span class="g">13</span>    <span class="kw">const</span> {'{'} email, password {'}'} = req.body;
+<span class="g add">14</span>  <span class="addln"><span class="kw">const</span> user = <span class="kw">await</span> db.users.findByEmail(email);</span>
+<span class="g add">15</span>  <span class="addln"><span class="kw">if</span> (!user) <span class="kw">return</span> res.status(<span class="nm3">401</span>).json({'{'} error: <span class="str">'no auth'</span> {'}'});</span>
+<span class="g">16</span>    <span class="kw">const</span> token = signJwt(user.id);
+<span class="g">17</span>    <span class="cm">// ponytail: 1 ruta, sin refresh tokens hasta que haga falta</span>
+<span class="g">18</span>    res.json({'{'} token {'}'});
+<span class="g">19</span>  {'}'}</pre>
+      </div>
+
+      <div class="term">
+        <div class="ttabs">
+          <span class="tt active"><span class="dot run"></span> Codex · exec</span>
+          <span class="tt"><span class="dot run"></span> Claude · stream</span>
+          <span class="tt">Logs</span>
+          <span class="flex"></span>
+          <span class="wt mono">worktree: .nexora/wt-codex</span>
+        </div>
+        <pre class="out"><span class="cx">codex</span> <span class="dim">exec --json -s workspace-write</span>
+<span class="ev">tool</span> apply_patch <span class="dim">auth.ts (+2)</span>
+<span class="ev">tool</span> shell <span class="dim">npm run typecheck</span>
+<span class="ok">✓</span> <span class="dim">typecheck passed</span>
+<span class="ev">msg</span>  <span class="dim">Endpoints listos: POST /login, POST /logout</span>
+<span class="cur">▍</span></pre>
+      </div>
+    </section>
+
+    <!-- agents + chat -->
+    <aside class="pane right">
+      <div class="px"><span class="label">Agentes</span></div>
+      <div class="agents">
+        <div class="ag" style="--c:var(--codex)">
+          <div class="agt"><span class="nm2"><i class="d" style="background:var(--codex)"></i>Codex</span><span class="pct num">65%</span></div>
+          <div class="agtask">Creando API de autenticación</div>
+          <div class="track"><span style="width:65%;background:var(--codex)"></span></div>
+          <div class="agf mono">auth.ts · users.ts · middleware.ts</div>
+        </div>
+        <div class="ag" style="--c:var(--claude)">
+          <div class="agt"><span class="nm2"><i class="d" style="background:var(--claude)"></i>Claude</span><span class="pct num">42%</span></div>
+          <div class="agtask">Construyendo interfaz de Login</div>
+          <div class="track"><span style="width:42%;background:var(--claude)"></span></div>
+          <div class="agf mono">Login.tsx · Button.tsx · styles.css</div>
+        </div>
+      </div>
+
+      <div class="px bt"><span class="label">Conversación</span></div>
+      <div class="chat">
+        <div class="cm-u">Implementa autenticación con Google.</div>
+        <div class="cm-a"><span class="who" style="color:var(--codex)">Codex</span> API lista: <code>POST /login</code>. <span style="color:var(--claude)">@Claude</span> puedes empezar el frontend.</div>
+        <div class="cm-a"><span class="who" style="color:var(--claude)">Claude</span> Recibido. Conectando <code>Login.tsx</code>.</div>
+      </div>
+      <div class="composer">
+        <input placeholder="Escribe al equipo…" />
+        <button class="send"><Icon name="arrowRight" cls="icon sm" /></button>
+      </div>
+    </aside>
+  </div>
+</Shell>
+
+<style>
+  .ws { height: 100%; display: grid; grid-template-columns: 232px minmax(0,1fr) 320px; }
+  .pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .explorer { border-right: 1px solid var(--line-soft); }
+  .right { border-left: 1px solid var(--line-soft); }
+
+  .search { display: flex; align-items: center; gap: 9px; padding: 11px 14px; border-bottom: 1px solid var(--line-soft); color: var(--fg-faint); }
+  .search input { flex: 1; background: transparent; border: none; outline: none; color: var(--fg); font-size: 13px; }
+  .search input::placeholder { color: var(--fg-faint); }
+  .px { display: flex; align-items: center; justify-content: space-between; padding: 16px 14px 8px; }
+  .px.bt { border-top: 1px solid var(--line-soft); margin-top: 4px; }
+
+  .tree { overflow-y: auto; padding-bottom: 10px; }
+  .trow { display: flex; align-items: center; gap: 8px; padding: 5px 14px 5px 0; font-size: 13px; color: var(--fg-dim); cursor: pointer; }
+  .trow:hover { background: var(--surface); color: var(--fg); }
+  .fi { color: var(--fg-faint); }
+  .fn { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gs { font-family: var(--mono); font-size: 10px; font-weight: 600; width: 14px; text-align: center; }
+  .gs.cx { color: var(--codex); } .gs.cl { color: var(--claude); }
+
+  .editor { background: var(--bg); }
+  .tabs { display: flex; align-items: center; gap: 4px; padding: 0 10px; border-bottom: 1px solid var(--line-soft); }
+  .tab { font-size: 13px; color: var(--fg-faint); padding: 12px 12px 11px; border-bottom: 2px solid transparent; cursor: pointer; }
+  .tab:hover { color: var(--fg-dim); }
+  .tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+  .flex { flex: 1; }
+
+  .code-area { flex: 1; overflow: auto; padding: 16px 0; }
+  .code { margin: 0; font-family: var(--mono); font-size: 12.5px; line-height: 1.85; color: var(--fg-dim); }
+  .g { display: inline-block; width: 30px; text-align: right; padding-right: 14px; color: #4a4337; user-select: none; }
+  .g.add { color: var(--running); }
+  .addln { background: rgba(111,167,107,.09); box-shadow: inset 2px 0 0 var(--running); display: inline-block; width: 100%; }
+  .kw { color: #c79bc0; } .fn2 { color: #88aeb4; } .str { color: #a9bf8a; } .nm3 { color: #c9a24b; } .cm { color: #6e685b; font-style: italic; }
+
+  .term { border-top: 1px solid var(--line-soft); height: 196px; display: flex; flex-direction: column; background: var(--bg-elev); }
+  .ttabs { display: flex; align-items: center; gap: 16px; padding: 9px 16px; border-bottom: 1px solid var(--line-soft); font-size: 12px; color: var(--fg-faint); }
+  .tt { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+  .tt.active { color: var(--fg); }
+  .wt { font-size: 11px; color: var(--fg-faint); }
+  .out { margin: 0; padding: 13px 16px; overflow: auto; font-family: var(--mono); font-size: 12px; line-height: 1.85; color: var(--fg-dim); }
+  .out .cx { color: var(--codex); } .out .dim { color: var(--fg-faint); } .out .ev { color: var(--accent); } .out .ok { color: var(--running); }
+  .cur { color: var(--running); animation: blink 1.1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .agents { padding: 0 14px; }
+  .ag { padding: 13px 0; border-top: 1px solid var(--line-soft); }
+  .ag:first-child { border-top: none; padding-top: 4px; }
+  .agt { display: flex; align-items: center; justify-content: space-between; }
+  .nm2 { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13px; }
+  .d { width: 6px; height: 6px; border-radius: 50%; }
+  .pct { font-size: 11.5px; color: var(--fg-faint); }
+  .agtask { font-size: 12.5px; color: var(--fg-dim); margin: 7px 0 9px; }
+  .track { height: 3px; background: var(--muted); border-radius: 3px; overflow: hidden; }
+  .track span { display: block; height: 100%; }
+  .agf { font-size: 10.5px; color: var(--fg-faint); margin-top: 9px; }
+
+  .chat { flex: 1; overflow-y: auto; padding: 4px 14px; display: flex; flex-direction: column; gap: 11px; }
+  .cm-u { align-self: flex-end; background: var(--surface-2); padding: 9px 13px; border-radius: var(--r-lg); border-bottom-right-radius: var(--r-xs); font-size: 13px; max-width: 85%; }
+  .cm-a { font-size: 13px; color: var(--fg-dim); line-height: 1.55; }
+  .cm-a .who { font-weight: 600; margin-right: 4px; }
+  .chat code { font-size: 11.5px; }
+  .composer { display: flex; gap: 9px; padding: 12px 14px; border-top: 1px solid var(--line-soft); }
+  .composer input { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 9px 12px; color: var(--fg); outline: none; font-size: 13px; }
+  .composer input:focus { border-color: #4a4234; }
+  .composer input::placeholder { color: var(--fg-faint); }
+  .send { background: var(--fg); color: var(--bg); border: none; border-radius: var(--r); width: 36px; display: grid; place-items: center; }
+  .send:hover { background: #fff; }
+</style>
