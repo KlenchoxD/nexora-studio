@@ -13,9 +13,9 @@
   --line:      #2A2A2E;
   --line-soft: #1E1E21;
 
-  --fg:        #ECECEE;
-  --fg-dim:    #9C9CA2;
-  --fg-faint:  #5E5E66;
+  --fg:        #F4F4F6;
+  --fg-dim:    #B4B4BC;
+  --fg-faint:  #6A6A73;
 
   --running: #E4E4E6;   /* "activo/ok": blanco suave (sin verde) */
   --idle:    #5E5E66;

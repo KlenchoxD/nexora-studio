@@ -68,6 +68,28 @@ function connInfo(a: AgentStatus): { txt: string; ok: boolean; hint?: string } {
 const opIcon = (op?: string) =>
   op === "add" ? "✚" : op === "delete" || op === "remove" ? "✕" : "✎";
 
+// Render mínimo de markdown inline: **negrita**, `código`. Sin librería (ponytail).
+function inlineMd(s: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  const re = /\*\*([^*]+)\*\*|`([^`]+)`/g;
+  let last = 0; let m: RegExpExecArray | null; let i = 0;
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push(s.slice(last, m.index));
+    if (m[1] !== undefined) out.push(<strong key={i++}>{m[1]}</strong>);
+    else if (m[2] !== undefined) out.push(<code key={i++}>{m[2]}</code>);
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) out.push(s.slice(last));
+  return out;
+}
+// Texto del agente → párrafos con saltos de línea y markdown inline.
+function mdText(text: string): React.ReactNode {
+  const lines = text.split("\n");
+  return lines.map((ln, i) => (
+    <span key={i}>{inlineMd(ln)}{i < lines.length - 1 ? <br /> : null}</span>
+  ));
+}
+
 // Etiqueta de estado de un turno (como los badges del timeline del mockup)
 function turnStatus(t: LiveTurn): { txt: string; cls: string } {
   if (t.events.some((x) => x.ev.kind === "error")) return { txt: "Error", cls: "err" };
@@ -80,7 +102,7 @@ function turnStatus(t: LiveTurn): { txt: string; cls: string } {
 
 function EventLine({ e }: { e: AgentEvent }) {
   switch (e.kind) {
-    case "step": return <p>{e.text}</p>;
+    case "step": return <p>{mdText(e.text)}</p>;
     case "tool_use":
       if (e.name === "command" && e.detail) {
         return (
@@ -99,7 +121,7 @@ function EventLine({ e }: { e: AgentEvent }) {
           {e.op && <span className="fc-op">{e.op}</span>}
         </div>
       );
-    case "done": return <div className="status">✓ {e.summary ?? "completado"}</div>;
+    case "done": return <div className="status">✓ {e.summary ? mdText(e.summary) : "completado"}</div>;
     case "error": return <div className="err">{e.message}</div>;
     case "started": return <div className="ev">sesión iniciada{e.api_key_source ? ` · ${e.api_key_source === "none" ? "cuenta personal" : e.api_key_source}` : ""}</div>;
     case "raw": return <div className="ev" style={{ opacity: 0.5 }}>{e.json.slice(0, 120)}</div>;

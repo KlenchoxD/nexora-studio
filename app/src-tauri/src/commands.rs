@@ -234,7 +234,21 @@ pub fn start_task(
         };
 
         let cancelled = jobs.lock().ok().map(|m| !m.contains_key(&tid)).unwrap_or(false);
-        let stderr_txt = err_buf.lock().ok().map(|b| b.clone()).unwrap_or_default();
+        let raw_stderr = err_buf.lock().ok().map(|b| b.clone()).unwrap_or_default();
+        // Filtrar avisos benignos (no son errores): trust dialog, permissions.allow, etc.
+        let stderr_txt = raw_stderr
+            .lines()
+            .filter(|l| {
+                let t = l.trim();
+                !t.is_empty()
+                    && !t.contains("permissions.allow")
+                    && !t.contains("has not been trusted")
+                    && !t.contains("hasTrustDialogAccepted")
+                    && !t.contains("Run Claude Code interactively")
+                    && !t.contains("set projects[")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
 
         if !saw_done && errored.is_none() && !cancelled {
             if !saw_content && !stderr_txt.trim().is_empty() {
