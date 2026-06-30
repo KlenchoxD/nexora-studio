@@ -56,7 +56,8 @@ $latest = [ordered]@{
   }
 }
 $latestPath = Join-Path $out "latest.json"
-$latest | ConvertTo-Json -Depth 6 | Out-File $latestPath -Encoding utf8
+# UTF-8 SIN BOM: un BOM al inicio rompe el parser del updater de Tauri.
+[System.IO.File]::WriteAllText($latestPath, ($latest | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
 
 # --- publicar release (lo crea o reemplaza los assets) ---
 $exists = (gh release view $tag --repo $repo 2>$null)
