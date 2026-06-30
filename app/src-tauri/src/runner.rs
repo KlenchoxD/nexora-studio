@@ -31,7 +31,7 @@ pub fn run<A: AgentAdapter>(
     worktree: &Path,
     on_event: impl FnMut(AgentEvent),
 ) -> Result<i32, String> {
-    let mut cmd = adapter.build_command(prompt, worktree);
+    let mut cmd = adapter.build_command(prompt, worktree, false);
     cmd.stdout(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("spawn falló: {e}"))?;
     let stdout = child.stdout.take().ok_or("sin stdout")?;

@@ -20,8 +20,13 @@ export const detectAgents = () => invoke<AgentStatus[]>("detect_agents");
 // description: texto que se muestra en "Tareas recientes" (intención del usuario).
 // prompt: lo que recibe el agente (puede llevar el preámbulo de equipo). Si no se
 // pasa description, se usa el prompt como antes.
-export const startTask = (agentId: string, prompt: string, projectPath: string, description?: string) =>
-  invoke<string>("start_task", { agentId, prompt, projectPath, description });
+export const startTask = (agentId: string, prompt: string, projectPath: string, description?: string, safe?: boolean) =>
+  invoke<string>("start_task", { agentId, prompt, projectPath, description, safe });
+
+// Memoria compartida del proyecto (.nexora/memory.md)
+export const readMemory = (projectPath: string) => invoke<string>("read_memory", { projectPath });
+export const writeMemory = (projectPath: string, content: string) =>
+  invoke<void>("write_memory", { projectPath, content });
 
 export const onAgentEvent = (cb: (p: EventPayload) => void): Promise<UnlistenFn> =>
   listen<EventPayload>("agent-event", (e) => cb(e.payload));

@@ -51,6 +51,8 @@ pub fn run() {
             commands::skills_catalog,
             commands::install_skill,
             commands::read_text_file,
+            commands::read_memory,
+            commands::write_memory,
             terminal::term_open,
             terminal::term_write,
             terminal::term_resize

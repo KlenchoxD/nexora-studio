@@ -15,21 +15,24 @@ impl AgentAdapter for Claude {
     fn capabilities(&self) -> &'static [&'static str] {
         &["frontend", "ui", "debugging", "docs", "review"]
     }
-    fn build_command(&self, prompt: &str, dir: &Path) -> Command {
+    fn build_command(&self, prompt: &str, dir: &Path, safe: bool) -> Command {
+        // safe = política de permisos: "plan" planifica sin tocar archivos;
+        // por defecto "acceptEdits" puede editar directo en la carpeta.
+        let mode = if safe { "plan" } else { "acceptEdits" };
         // Windows: claude se instala como .cmd wrapper; necesita cmd /c para resolverse.
         #[cfg(windows)]
         let mut c = {
             let mut c = Command::new("cmd");
             c.args(["/c", "claude", "-p", prompt,
                 "--output-format", "stream-json", "--verbose",
-                "--permission-mode", "acceptEdits"]);
+                "--permission-mode", mode]);
             c
         };
         #[cfg(not(windows))]
         let mut c = {
             let mut c = Command::new("claude");
             c.args(["-p", prompt, "--output-format", "stream-json",
-                "--verbose", "--permission-mode", "acceptEdits"]);
+                "--verbose", "--permission-mode", mode]);
             c
         };
         // Si hay ANTHROPIC_API_KEY en el entorno del sistema, Claude Code la usará

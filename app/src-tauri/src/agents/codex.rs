@@ -15,7 +15,9 @@ impl AgentAdapter for Codex {
     fn capabilities(&self) -> &'static [&'static str] {
         &["backend", "architecture", "tests", "refactor"]
     }
-    fn build_command(&self, prompt: &str, dir: &Path) -> Command {
+    fn build_command(&self, prompt: &str, dir: &Path, _safe: bool) -> Command {
+        // _safe: el sandbox de Windows de Codex no arranca (helper ausente), así que
+        // el modo seguro de Codex se refuerza vía prompt, no con flag de sandbox.
         let d = dir.to_string_lossy().into_owned();
         // -s danger-full-access: el sandbox de Windows (codex-windows-sandbox-setup.exe)
         // no arranca en muchas instalaciones ("program not found"), lo que bloquea TODA

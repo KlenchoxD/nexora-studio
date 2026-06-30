@@ -16,7 +16,8 @@ pub trait AgentAdapter {
     /// Comando listo para lanzar: programa, args, cwd = carpeta del proyecto y
     /// **stdin cerrado** (ambas CLIs se cuelgan esperando stdin — ver
     /// CAPTURE-NOTES). El runner solo añade la captura de stdout.
-    fn build_command(&self, prompt: &str, dir: &Path) -> Command;
+    /// `safe` = modo plan/solo-lectura (política de permisos del operador).
+    fn build_command(&self, prompt: &str, dir: &Path, safe: bool) -> Command;
 
     /// Normaliza una línea JSONL del agente a eventos comunes.
     fn parse_line(&self, line: &str) -> Vec<AgentEvent>;
@@ -37,7 +38,7 @@ mod tests {
     // así que el programa es "cmd" y la CLI real es el primer arg tras "/c".
     #[test]
     fn claude_launches_headless_streamjson() {
-        let cmd = Claude.build_command("hola", Path::new("/tmp/wt"));
+        let cmd = Claude.build_command("hola", Path::new("/tmp/wt"), false);
         let a = args_of(&cmd);
         let prog = cmd.get_program().to_string_lossy().into_owned();
         assert!(prog == "claude" || (prog == "cmd" && a.contains(&"claude".to_string())));
@@ -48,7 +49,7 @@ mod tests {
 
     #[test]
     fn codex_launches_exec_json_in_dir() {
-        let cmd = Codex.build_command("hola", Path::new("/tmp/proj"));
+        let cmd = Codex.build_command("hola", Path::new("/tmp/proj"), false);
         let a = args_of(&cmd);
         let prog = cmd.get_program().to_string_lossy().into_owned();
         assert!(prog == "codex" || (prog == "cmd" && a.contains(&"codex".to_string())));

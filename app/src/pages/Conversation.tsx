@@ -5,6 +5,7 @@ import TermView from "../components/TermView";
 import {
   detectAgents, startTask, onAgentEvent, taskDiff, cancelTask, openProject,
   listRecentTasks, openTerminal, systemStats, listDir, skillsCatalog, installSkill, readTextFile,
+  readMemory, writeMemory,
   type AgentStatus, type AgentEvent, type RecentTask, type SystemStats, type DirEntry, type SkillEntry,
 } from "../lib/ipc";
 import "../styles/conversation.css";
@@ -31,6 +32,11 @@ const teamPromptClaude = (task: string) =>
   `UI/frontend, documentación y revisión. Al terminar, deja CLARO en tu respuesta qué hiciste ` +
   `y qué le queda por implementar a Codex (backend/lógica), porque tu salida será su contexto.\n\n` +
   `TAREA:\n${task}`;
+
+// Prefijo de contexto inyectado a TODO prompt: memoria del proyecto + modo permisos.
+const ctxPrefix = (mem: string, safe: boolean) =>
+  (safe ? "MODO PLAN: NO modifiques archivos ni ejecutes comandos que cambien el sistema; solo analiza y propón el plan.\n\n" : "") +
+  (mem.trim() ? `MEMORIA DEL PROYECTO (decisiones y convenciones previas — respétalas):\n${mem.trim()}\n\n---\n\n` : "");
 
 const teamPromptCodex = (task: string, claudeWork: string) =>
   `${TEAM_INTRO}\n\nTU ROL (Codex): implementa la lógica/backend y completa lo que Claude dejó ` +
@@ -219,6 +225,14 @@ export default function Conversation() {
   const [canvasFile, setCanvasFile] = useState<string>("");
   const [canvasContent, setCanvasContent] = useState<string>("");
   const [canvasLoading, setCanvasLoading] = useState(false);
+  // Memoria compartida + política de permisos (adoptados de OpenClaw)
+  const [memory, setMemory] = useState("");
+  const [memSaved, setMemSaved] = useState(true);
+  const [safe, setSafe] = useState(false);
+  const memRef = useRef("");
+  const safeRef = useRef(false);
+  useEffect(() => { memRef.current = memory; }, [memory]);
+  useEffect(() => { safeRef.current = safe; }, [safe]);
   const bottom = useRef<HTMLDivElement>(null);
   const chain = useRef<PendingChain | null>(null);
   const pendingLaunch = useRef<null | { agent: string; prompt: string; proj: string; desc: string }>(null);
@@ -254,7 +268,7 @@ export default function Conversation() {
           chain.current = null;
           chainCtx.current = "";
           pendingLaunch.current = {
-            agent: nextAgent, prompt: teamPromptCodex(originalPrompt, ctx), proj, desc: originalPrompt,
+            agent: nextAgent, prompt: ctxPrefix(memRef.current, safeRef.current) + teamPromptCodex(originalPrompt, ctx), proj, desc: originalPrompt,
           };
           setLaunchTick((n) => n + 1);
         }
@@ -279,7 +293,7 @@ export default function Conversation() {
     if (!pendingLaunch.current) return;
     const { agent, prompt: p, proj, desc } = pendingLaunch.current;
     pendingLaunch.current = null;
-    startTask(agent, p, proj, desc).then((taskId) => {
+    startTask(agent, p, proj, desc, safeRef.current).then((taskId) => {
       setLive((s) => [...s, { taskId, agentId: agent, events: [], done: false }]);
     }).catch((e) => {
       setLive((s) => [...s, {
@@ -348,8 +362,14 @@ export default function Conversation() {
     setProject(dir);
     setNotice("");
     loadTree(dir);
+    readMemory(dir).then((m) => { setMemory(m); setMemSaved(true); }).catch(() => setMemory(""));
     try { setBranch(await openProject(dir)); }
     catch (e) { setBranch(""); setNotice(String(e)); }
+  };
+
+  const saveMemory = () => {
+    if (!project) return;
+    writeMemory(project, memory).then(() => setMemSaved(true)).catch((e) => setNotice(String(e)));
   };
 
   const send = async () => {
@@ -358,6 +378,7 @@ export default function Conversation() {
     if (!targetReady) { setNotice("El agente seleccionado no está listo."); return; }
     const text = prompt;
     setPrompt(""); setNotice(""); setTab("Línea de tiempo");
+    const pfx = ctxPrefix(memory, safe); // memoria + modo permisos
 
     if (target === "both") {
       const readyIds = ["claude", "codex"].filter((id) => {
@@ -366,14 +387,14 @@ export default function Conversation() {
       if (readyIds.length === 0) return;
       if (readyIds.length === 1) {
         try {
-          const taskId = await startTask(readyIds[0], text, project);
+          const taskId = await startTask(readyIds[0], pfx + text, project, text, safe);
           setLive((prev) => [...prev, { taskId, agentId: readyIds[0], events: [], done: false }]);
         } catch (e) {
           setLive((prev) => [...prev, { taskId: `err-${Date.now()}`, agentId: readyIds[0], events: [{ ev: { kind: "error", message: String(e) }, at: Date.now() }], done: true }]);
         }
       } else {
         try {
-          const taskId = await startTask("claude", teamPromptClaude(text), project, text);
+          const taskId = await startTask("claude", pfx + teamPromptClaude(text), project, text, safe);
           chain.current = { waitFor: taskId, nextAgent: "codex", originalPrompt: text, project };
           setLive((prev) => [...prev, { taskId, agentId: "claude", events: [], done: false }]);
         } catch (e) {
@@ -383,7 +404,7 @@ export default function Conversation() {
     } else {
       const a = target === "auto" ? "claude" : target;
       try {
-        const taskId = await startTask(a, text, project);
+        const taskId = await startTask(a, pfx + text, project, text, safe);
         setLive((prev) => [...prev, { taskId, agentId: a, events: [], done: false }]);
       } catch (e) {
         setLive((prev) => [...prev, { taskId: `err-${Date.now()}-${a}`, agentId: a, events: [{ ev: { kind: "error", message: String(e) }, at: Date.now() }], done: true }]);
@@ -607,6 +628,14 @@ export default function Conversation() {
                   );
                 })}
               </div>
+              <button
+                className={`seg safe-toggle ${safe ? "active" : ""}`}
+                onClick={() => setSafe((s) => !s)}
+                title="Modo plan: los agentes analizan y proponen sin modificar archivos"
+              >
+                {safe ? "● Plan" : "Plan"}
+              </button>
+              <span style={{ flex: 1 }} />
               <button className="send" aria-label="Enviar" onClick={send} disabled={!project || !targetReady}
                 style={{ opacity: (!project || !targetReady) ? 0.35 : 1 }}>
                 <Icon name="arrowRight" cls="icon sm" />
@@ -696,6 +725,22 @@ export default function Conversation() {
           ) : (
             <div className="ex-empty">Sin handoff activo. Usa el modo <b>Ambos</b> para que Claude pase el trabajo a Codex.</div>
           )}
+        </div>
+
+        <div className="rcard">
+          <div className="rc-head">
+            <span className="label">Memoria del proyecto</span>
+            {!memSaved && <button className="btn sm primary" onClick={saveMemory}>Guardar</button>}
+          </div>
+          <p className="mem-note">Decisiones y convenciones que se inyectan a Claude y Codex en cada tarea.</p>
+          <textarea
+            className="mem-area"
+            placeholder={project ? "Ej: usar TypeScript estricto. La API vive en /api. No tocar legacy/." : "Abre una carpeta para usar la memoria."}
+            value={memory}
+            disabled={!project}
+            onChange={(e) => { setMemory(e.target.value); setMemSaved(false); }}
+            onBlur={() => { if (!memSaved) saveMemory(); }}
+          />
         </div>
       </aside>
 

@@ -9,6 +9,9 @@ app/src-tauri/gen/schemas/
 *.key
 *.key.pub
 
+# referencia externa (estudio, NO parte del build) — p.ej. OpenClaw 1.6 GB
+reference/
+
 # logs / misc
 *.log
 .DS_Store

@@ -134,6 +134,7 @@ pub fn start_task(
     prompt: String,
     project_path: String,
     description: Option<String>,
+    safe: Option<bool>,
 ) -> Result<String, String> {
     let dir = PathBuf::from(&project_path);
     if !dir.is_dir() {
@@ -157,7 +158,7 @@ pub fn start_task(
         if agent_id == "codex" { Box::new(Codex) } else { Box::new(Claude) };
     // El agente trabaja DIRECTO en tu carpeta (como Claude Code). git, si la
     // carpeta lo tiene, es la red de seguridad para revisar/deshacer; no se exige.
-    let mut cmd = adapter.build_command(&prompt, &dir);
+    let mut cmd = adapter.build_command(&prompt, &dir, safe.unwrap_or(false));
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("spawn falló: {e}"))?;
     let stdout = child.stdout.take().ok_or("sin stdout")?;
@@ -370,6 +371,28 @@ pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     // carpetas primero, luego alfabético (case-insensitive)
     out.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
     Ok(out)
+}
+
+// ---------- Memoria compartida del proyecto (concepto memory-host de OpenClaw) ----------
+// Decisiones/convenciones que persisten entre sesiones y se inyectan a ambos
+// agentes para que no se repitan ni se contradigan. Vive en .nexora/memory.md.
+
+fn memory_path(project: &str) -> PathBuf {
+    PathBuf::from(project).join(".nexora").join("memory.md")
+}
+
+#[tauri::command]
+pub fn read_memory(project_path: String) -> Result<String, String> {
+    Ok(std::fs::read_to_string(memory_path(&project_path)).unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn write_memory(project_path: String, content: String) -> Result<(), String> {
+    let p = memory_path(&project_path);
+    if let Some(d) = p.parent() {
+        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&p, content).map_err(|e| e.to_string())
 }
 
 // ---------- Live Canvas: leer contenido de un archivo tocado por un agente ----------
