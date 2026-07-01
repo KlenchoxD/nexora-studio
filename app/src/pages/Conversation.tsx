@@ -27,11 +27,20 @@ const TEAM_INTRO =
   "Coordínense: no rehagan el trabajo del otro, construyan sobre él. " +
   "Sé concreto y haz cambios reales en los archivos, no solo describas.";
 
-const teamPromptClaude = (task: string) =>
-  `${TEAM_INTRO}\n\nTU ROL (Claude): analiza la tarea, define el plan y ejecuta la parte de ` +
-  `UI/frontend, documentación y revisión. Al terminar, deja CLARO en tu respuesta qué hiciste ` +
-  `y qué le queda por implementar a Codex (backend/lógica), porque tu salida será su contexto.\n\n` +
-  `TAREA:\n${task}`;
+// Modo "Ambos" = EMPRESA: los dos agentes arrancan al mismo tiempo, cada uno en su
+// área, sabiendo qué hace el otro para no pisarse (división de trabajo tipo equipo).
+const ROLE: Record<string, { self: string; other: string; otherName: string }> = {
+  claude: { self: "UI/frontend, documentación y revisión", other: "backend, lógica y tests", otherName: "Codex" },
+  codex: { self: "backend, lógica y tests", other: "UI/frontend, documentación y revisión", otherName: "Claude" },
+};
+const parallelPrompt = (agent: string, task: string) => {
+  const r = ROLE[agent] ?? ROLE.claude;
+  return `${TEAM_INTRO}\nTrabajan EN PARALELO (al mismo tiempo) como un equipo; cada uno en su área.\n` +
+    `TU ROL: ${r.self}.\nEL OTRO AGENTE (${r.otherName}) trabaja A LA VEZ en: ${r.other}.\n` +
+    `Para NO chocar: cíñete a tu área y no modifiques archivos que le tocan al otro. ` +
+    `Anota en HANDOFF.md lo que haces y lo que necesites del otro, así se coordinan sin pisarse.\n\n` +
+    `TAREA (haz TU parte):\n${task}`;
+};
 
 // Prefijo de contexto inyectado a TODO prompt: memoria del proyecto + modo permisos.
 const ctxPrefix = (mem: string, safe: boolean) =>
@@ -403,24 +412,21 @@ export default function Conversation() {
     const pfx = ctxPrefix(memory, safe); // memoria + modo permisos
 
     if (target === "both") {
+      // EMPRESA: lanzar TODOS los agentes listos AL MISMO TIEMPO, cada uno con su
+      // rol y sabiendo qué hace el otro. startTask solo lanza el proceso y vuelve;
+      // el trabajo corre concurrente en el backend → paralelismo real.
       const readyIds = ["claude", "codex"].filter((id) => {
         const a = agents.find((x) => x.id === id); return a ? agentReady(a) : false;
       });
       if (readyIds.length === 0) return;
-      if (readyIds.length === 1) {
+      const solo = readyIds.length === 1;
+      for (const id of readyIds) {
         try {
-          const taskId = await startTask(readyIds[0], pfx + text, project, text, safe);
-          setLive((prev) => [...prev, { taskId, agentId: readyIds[0], events: [], done: false }]);
+          const p = solo ? text : parallelPrompt(id, text);
+          const taskId = await startTask(id, pfx + p, project, text, safe);
+          setLive((prev) => [...prev, { taskId, agentId: id, events: [], done: false }]);
         } catch (e) {
-          setLive((prev) => [...prev, { taskId: `err-${Date.now()}`, agentId: readyIds[0], events: [{ ev: { kind: "error", message: String(e) }, at: Date.now() }], done: true }]);
-        }
-      } else {
-        try {
-          const taskId = await startTask("claude", pfx + teamPromptClaude(text), project, text, safe);
-          chain.current = { waitFor: taskId, nextAgent: "codex", originalPrompt: text, project };
-          setLive((prev) => [...prev, { taskId, agentId: "claude", events: [], done: false }]);
-        } catch (e) {
-          setLive((prev) => [...prev, { taskId: `err-${Date.now()}`, agentId: "claude", events: [{ ev: { kind: "error", message: String(e) }, at: Date.now() }], done: true }]);
+          setLive((prev) => [...prev, { taskId: `err-${Date.now()}-${id}`, agentId: id, events: [{ ev: { kind: "error", message: String(e) }, at: Date.now() }], done: true }]);
         }
       }
     } else {
