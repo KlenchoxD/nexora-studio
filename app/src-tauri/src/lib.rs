@@ -11,6 +11,7 @@ pub mod git;
 pub mod path_policy;
 pub mod runner;
 pub mod terminal;
+pub mod trusted_exec;
 pub mod worktree;
 
 /// Estado global: conexión SQLite, procesos en curso (para cancelar) y el

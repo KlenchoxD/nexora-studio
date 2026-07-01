@@ -8,9 +8,35 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
+
+/// Ruta absoluta y confiable a git, resuelta UNA vez desde PATH (control #1).
+/// Nunca se invoca "git" por nombre relativo desde un cwd que controla el
+/// agente: se usa siempre este binario absoluto. Si la resolución falla (git no
+/// en PATH), degradamos a "git" para no romper el arranque; las rutas de
+/// orquestación exigen aparte que la resolución haya sido exitosa.
+fn git_program() -> &'static Path {
+    static GIT: OnceLock<PathBuf> = OnceLock::new();
+    GIT.get_or_init(|| crate::trusted_exec::resolve("git").unwrap_or_else(|_| PathBuf::from("git")))
+}
+
+/// Ruta absoluta de git si se pudo resolver de forma confiable (para que la
+/// orquestación pueda exigirla antes de ejecutar nada en un worktree).
+pub fn trusted_git_path() -> Result<PathBuf, String> {
+    crate::trusted_exec::resolve("git")
+}
+
+/// Directorio de hooks VACÍO administrado por Nexora. Se pasa como
+/// `core.hooksPath` en el commit del orquestador para que git NO ejecute hooks
+/// del repo (`pre-commit`, etc.) que podrían correr código del proyecto.
+fn empty_hooks_dir() -> PathBuf {
+    let d = std::env::temp_dir().join("nexora-empty-hooks");
+    let _ = std::fs::create_dir_all(&d);
+    d
+}
 
 fn git_cmd(cwd: &Path) -> Command {
-    let mut c = Command::new("git");
+    let mut c = Command::new(git_program());
     c.current_dir(cwd);
     // CREATE_NO_WINDOW: sin ventana de consola en Windows.
     #[cfg(windows)]
@@ -201,14 +227,23 @@ pub fn commit_authorized(
             msg.push_str(&format!("{k}: {v}\n"));
         }
     }
+    // Commit endurecido (control #2): sin hooks del repo (core.hooksPath a un
+    // directorio vacío), sin firma GPG, e identidad propia sin tocar config global.
+    let hooks = empty_hooks_dir();
+    let hooks_arg = format!("core.hooksPath={}", hooks.to_string_lossy());
     run(
         worktree,
         &[
+            "-c",
+            &hooks_arg,
+            "-c",
+            "commit.gpgSign=false",
             "-c",
             "user.name=Nexora Studio",
             "-c",
             "user.email=nexora@local",
             "commit",
+            "--no-verify",
             "-m",
             &msg,
         ],
@@ -418,6 +453,70 @@ mod tests {
         assert!(err.contains("no coincide"), "debe rechazar por mismatch: {err}");
         // y no debe haber creado commit
         assert_eq!(head_commit(&wt).unwrap(), base);
+
+        remove_worktree(&repo_root(&repo).unwrap(), &wt).ok();
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn canary_fake_git_in_worktree_is_not_used() {
+        if !git_available() {
+            return;
+        }
+        let repo = tmp_repo(false);
+        let base = head_commit(&repo).unwrap();
+        let wt = std::env::temp_dir().join(format!("nexora_wt_{}", uuid::Uuid::new_v4()));
+        add_worktree(&repo_root(&repo).unwrap(), &wt, "nexora/test/fakegit", &base).unwrap();
+
+        // El agente deja un "git" falso dentro del worktree. Nexora debe usar el
+        // git ABSOLUTO resuelto desde PATH, que NUNCA está dentro del worktree.
+        fs::write(wt.join("git"), "#!/bin/sh\necho HACKED").unwrap();
+        fs::write(wt.join("git.exe"), "falso").unwrap();
+        let trusted = trusted_git_path().expect("git debe resolverse en dev");
+        assert!(trusted.is_absolute());
+        assert!(
+            !crate::trusted_exec::is_inside(&trusted, &wt),
+            "el git de confianza no debe estar dentro del worktree: {trusted:?}"
+        );
+
+        // y las operaciones siguen funcionando con el git legítimo
+        fs::write(wt.join("feature.rs"), "// impl").unwrap();
+        commit_authorized(&wt, &base, &["feature.rs".into()], "add", &[]).unwrap();
+
+        remove_worktree(&repo_root(&repo).unwrap(), &wt).ok();
+        fs::remove_dir_all(&repo).ok();
+    }
+
+    #[test]
+    fn canary_malicious_precommit_hook_is_not_run() {
+        if !git_available() {
+            return;
+        }
+        let repo = tmp_repo(false);
+        // Hook pre-commit que crea un centinela y ABORTA el commit (exit 1). Los
+        // worktrees comparten los hooks del repo común, así que afectaría a un
+        // commit normal desde el worktree.
+        let hooks = repo.join(".git").join("hooks");
+        fs::create_dir_all(&hooks).unwrap();
+        let sentinel = repo.join("HOOK_RAN.txt");
+        let hook = hooks.join("pre-commit");
+        fs::write(&hook, format!("#!/bin/sh\ntouch \"{}\"\nexit 1\n", sentinel.to_string_lossy())).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        let base = head_commit(&repo).unwrap();
+        let wt = std::env::temp_dir().join(format!("nexora_wt_{}", uuid::Uuid::new_v4()));
+        add_worktree(&repo_root(&repo).unwrap(), &wt, "nexora/test/hook", &base).unwrap();
+        fs::write(wt.join("feature.rs"), "// impl").unwrap();
+
+        // El commit del orquestador desactiva hooks → debe crear el commit y el
+        // hook NO debe ejecutarse (sin centinela).
+        let hash = commit_authorized(&wt, &base, &["feature.rs".into()], "add", &[]).unwrap();
+        assert_eq!(hash.len(), 40);
+        assert!(!sentinel.exists(), "el hook pre-commit se ejecutó pese a estar desactivado");
 
         remove_worktree(&repo_root(&repo).unwrap(), &wt).ok();
         fs::remove_dir_all(&repo).ok();
