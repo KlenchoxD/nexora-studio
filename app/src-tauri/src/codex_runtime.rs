@@ -208,6 +208,23 @@ impl CodexRuntime {
         Ok(c)
     }
 
+    /// `Command` completo (`codex sandbox -- program args`) listo para spawn. El
+    /// ValidationRunner lo usa para aplicar timeout con control del proceso.
+    pub fn command(
+        &self,
+        mode: SandboxMode,
+        program: &Path,
+        args: &[&str],
+        cwd: &Path,
+        temp_dir: &Path,
+        deny_roots: &[&Path],
+    ) -> Result<Command, String> {
+        let mut c = self.sandbox_command(mode, cwd, temp_dir, deny_roots)?;
+        c.arg("--").arg(program);
+        c.args(args);
+        Ok(c)
+    }
+
     /// Ejecuta `program args` dentro del sandbox de Codex (exit code REAL, sin
     /// modelo). `deny_roots` son el repo y sus worktrees (para filtrar el PATH).
     pub fn run_sandboxed(
@@ -219,10 +236,9 @@ impl CodexRuntime {
         temp_dir: &Path,
         deny_roots: &[&Path],
     ) -> Result<Output, String> {
-        let mut c = self.sandbox_command(mode, cwd, temp_dir, deny_roots)?;
-        c.arg("--").arg(program);
-        c.args(args);
-        c.output().map_err(|e| format!("codex sandbox falló: {e}"))
+        self.command(mode, program, args, cwd, temp_dir, deny_roots)?
+            .output()
+            .map_err(|e| format!("codex sandbox falló: {e}"))
     }
 
     /// Prueba disponibilidad ejecutando un comando trivial. Elevated preferido.
