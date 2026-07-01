@@ -475,7 +475,7 @@ mod tests {
         let trusted = trusted_git_path().expect("git debe resolverse en dev");
         assert!(trusted.is_absolute());
         assert!(
-            !crate::trusted_exec::is_inside(&trusted, &wt),
+            matches!(crate::trusted_exec::is_inside(&trusted, &wt), Ok(false)),
             "el git de confianza no debe estar dentro del worktree: {trusted:?}"
         );
 

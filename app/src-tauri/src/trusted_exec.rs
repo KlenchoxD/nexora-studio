@@ -25,7 +25,9 @@ pub fn resolve(program: &str) -> Result<PathBuf, String> {
 }
 
 /// Busca `program` en los directorios de PATH (respetando PATHEXT en Windows).
-/// NO considera el directorio actual: esa es justamente la vía de suplantación.
+/// NO considera el directorio actual, y además IGNORA entradas de PATH que sean
+/// relativas, vacías o `.` (un PATH manipulado con `.` reintroduciría la
+/// resolución desde el cwd). Cada directorio se canonicaliza antes de buscar.
 fn which(program: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     let exts: Vec<String> = if cfg!(windows) {
@@ -39,6 +41,12 @@ fn which(program: &str) -> Option<PathBuf> {
         Vec::new()
     };
     for dir in std::env::split_paths(&path) {
+        // Rechaza entradas no absolutas / vacías / "." (vías de suplantación).
+        if dir.as_os_str().is_empty() || !dir.is_absolute() {
+            continue;
+        }
+        // Canonicaliza el directorio; si no se puede, se omite (fail-closed).
+        let Ok(dir) = dir.canonicalize() else { continue };
         let direct = dir.join(program);
         if direct.is_file() {
             return Some(direct);
@@ -53,27 +61,38 @@ fn which(program: &str) -> Option<PathBuf> {
     None
 }
 
-/// ¿`exe` está DENTRO de `dir`? Un binario de confianza nunca debe vivir en el
-/// repo/worktree controlado por el agente.
-pub fn is_inside(exe: &Path, dir: &Path) -> bool {
-    match (exe.canonicalize(), dir.canonicalize()) {
-        (Ok(e), Ok(d)) => e.starts_with(d),
-        _ => false,
-    }
+/// ¿`exe` está DENTRO de `dir`? Fail-closed: si alguna canonicalización falla se
+/// devuelve `Err` (incertidumbre = rechazo), NO `false`. Un binario de confianza
+/// nunca debe vivir en el repo/worktree controlado por el agente.
+pub fn is_inside(exe: &Path, dir: &Path) -> Result<bool, String> {
+    let e = exe
+        .canonicalize()
+        .map_err(|err| format!("no se pudo canonicalizar {exe:?}: {err}"))?;
+    let d = dir
+        .canonicalize()
+        .map_err(|err| format!("no se pudo canonicalizar {dir:?}: {err}"))?;
+    Ok(e.starts_with(d))
 }
 
 /// Resuelve `program` y RECHAZA si su ruta canónica cae dentro de cualquiera de
-/// `deny_roots` (repo y sus worktrees). Exponer `is_inside` no basta: el runner
-/// debe aplicar esta comprobación a cada ejecutable que vaya a lanzar (git,
-/// codex, claude, node, npm), para que un binario suplantado dentro del proyecto
-/// nunca se ejecute.
+/// `deny_roots` (repo y sus worktrees), o si no se puede comprobar. Exponer
+/// `is_inside` no basta: el runner debe aplicar esta comprobación a cada
+/// ejecutable que vaya a lanzar (git, codex, claude, node, npm), para que un
+/// binario suplantado dentro del proyecto nunca se ejecute.
 pub fn resolve_outside(program: &str, deny_roots: &[&Path]) -> Result<PathBuf, String> {
     let exe = resolve(program)?;
     for root in deny_roots {
-        if is_inside(&exe, root) {
-            return Err(format!(
-                "'{program}' resuelto en {exe:?} está dentro de {root:?}: posible suplantación, se rechaza"
-            ));
+        // Fail-closed: si no se puede determinar, se rechaza.
+        match is_inside(&exe, root) {
+            Ok(false) => {}
+            Ok(true) => {
+                return Err(format!(
+                    "'{program}' resuelto en {exe:?} está dentro de {root:?}: posible suplantación, se rechaza"
+                ))
+            }
+            Err(e) => {
+                return Err(format!("no se pudo verificar '{program}' contra {root:?}: {e}"))
+            }
         }
     }
     Ok(exe)
@@ -103,8 +122,10 @@ mod tests {
         std::fs::create_dir_all(&inside).unwrap();
         let f = inside.join("git.exe");
         std::fs::write(&f, "falso").unwrap();
-        assert!(is_inside(&f, &base));
-        assert!(!is_inside(&base, &inside));
+        assert!(is_inside(&f, &base).unwrap());
+        assert!(!is_inside(&base, &inside).unwrap());
+        // fail-closed: ruta inexistente no se puede canonicalizar -> Err
+        assert!(is_inside(&base.join("no_existe_zzz"), &base).is_err());
         std::fs::remove_dir_all(&inside).ok();
     }
 
