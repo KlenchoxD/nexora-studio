@@ -4,14 +4,13 @@
 //! comando directamente en el sandbox de Codex, SIN modelo de por medio (exit
 //! code real del proceso). En Windows ese modo requiere el helper
 //! `codex-windows-sandbox-setup.exe`; si falta (frecuente), NO está disponible
-//! (ver `codex_sandbox_available`). Camino FALLBACK: `codex exec --json`, donde
+//! (disponibilidad vía `codex_runtime::discover`). Camino FALLBACK: `codex exec --json`, donde
 //! el orquestador VERIFICA los eventos JSONL en vez de confiar en el texto del
 //! modelo. Este módulo es la lógica pura de esa verificación (fallback) y la
 //! detección de capacidad; el lanzamiento en vivo se cablea aparte.
 
 use crate::git::ChangedFile;
 use globset::{Glob, GlobSet, GlobSetBuilder};
-use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum ValidationStatus {
@@ -166,35 +165,11 @@ pub fn decide(spec: &ValidationSpec, ev: &Evidence, changed: &[ChangedFile]) -> 
     }
 }
 
-/// Probe de capacidad: ¿está operativo `codex sandbox` en esta máquina? En
-/// Windows falla si falta `codex-windows-sandbox-setup.exe`. Ejecuta un comando
-/// trivial dentro del sandbox y comprueba que no falló por helper ausente.
-pub fn codex_sandbox_available() -> bool {
-    let marker = "nexora_sandbox_ok";
-    #[cfg(windows)]
-    let out = {
-        use std::os::windows::process::CommandExt;
-        Command::new("cmd")
-            .args(["/c", "codex", "sandbox", "--", "cmd", "/c", "echo", marker])
-            .creation_flags(0x0800_0000)
-            .output()
-    };
-    #[cfg(not(windows))]
-    let out = Command::new("codex")
-        .args(["sandbox", "--", "echo", marker])
-        .output();
-    match out {
-        Ok(o) => {
-            let text = format!(
-                "{}{}",
-                String::from_utf8_lossy(&o.stdout),
-                String::from_utf8_lossy(&o.stderr)
-            );
-            o.status.success() && text.contains(marker) && !text.contains("program not found")
-        }
-        Err(_) => false,
-    }
-}
+// NOTA: el antiguo `codex_sandbox_available()` se ELIMINÓ. Reintroducía el bug:
+// invocaba `cmd /c codex sandbox` usando el primer `codex` del PATH, que en esta
+// máquina está desemparejado de su codex-resources. La detección de sandbox vive
+// ahora SOLO en `codex_runtime::discover()`, que localiza una release coherente y
+// devuelve el modo operativo. No deben coexistir dos mecanismos de detección.
 
 #[cfg(test)]
 mod tests {

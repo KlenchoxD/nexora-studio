@@ -1,28 +1,30 @@
-//! Localizador del runtime de Codex (control A: reparar disponibilidad del sandbox).
+//! Localizador y frontera de seguridad del runtime de Codex (control A).
 //!
 //! En Windows coexisten varias instalaciones de Codex (App, standalone, npm,
 //! extensión). El `codex.exe` activo en PATH puede NO estar emparejado con su
 //! directorio `codex-resources` (que contiene `codex-windows-sandbox-setup.exe`),
-//! y entonces `codex sandbox` falla con "program not found" — aunque el helper SÍ
+//! y entonces `codex sandbox` falla con "program not found" aunque el helper SÍ
 //! exista en otra release. Diagnóstico confirmado en esta máquina.
 //!
 //! Solución: NO usar el primer `codex` del PATH. Localizar una RELEASE STANDALONE
-//! coherente (bin\codex.exe + codex-resources\helper de la MISMA versión) y
-//! lanzar ese exe absoluto con un PATH que anteponga su `bin` y `codex-resources`.
-//! Así el sandbox directo (determinista, sin modelo) queda disponible.
+//! coherente (bin\codex.exe + codex-resources\helper de la MISMA versión,
+//! verificada ejecutando el exe), lanzar ese exe absoluto con un PATH filtrado
+//! que anteponga su `bin` y `codex-resources`, con entorno MÍNIMO (sin secretos).
 
+use crate::trusted_exec;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CodexRuntime {
-    pub executable: PathBuf,     // <release>\bin\codex.exe
-    pub resources_dir: PathBuf,  // <release>\codex-resources
-    pub sandbox_helper: PathBuf, // <resources>\codex-windows-sandbox-setup.exe
-    pub version: String,         // "0.142.3"
+    pub executable: PathBuf,     // <release>\bin\codex.exe (canónico)
+    pub resources_dir: PathBuf,  // <release>\codex-resources (canónico)
+    pub sandbox_helper: PathBuf, // <resources>\codex-windows-sandbox-setup.exe (canónico)
+    pub version: String,         // "0.142.3" (del nombre de release)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum SandboxMode {
     /// Preferido: sandbox elevado nativo de Windows.
     Elevated,
@@ -35,6 +37,14 @@ pub enum SandboxCapability {
     Elevated,
     Unelevated,
     Unavailable,
+}
+
+/// Runtime ya PROBADO: incluye el modo operativo, para que el ValidationRunner
+/// no reejecute probes ni adivine el modo.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ValidatedCodexRuntime {
+    pub runtime: CodexRuntime,
+    pub mode: SandboxMode,
 }
 
 fn releases_dir() -> Option<PathBuf> {
@@ -53,13 +63,13 @@ fn parse_version(dir_name: &str) -> String {
     dir_name.split('-').next().unwrap_or(dir_name).to_string()
 }
 
-/// Clave de orden numérica para versiones "a.b.c" (fallback a 0 en no numéricos).
 fn version_key(v: &str) -> Vec<u32> {
     v.split('.').map(|p| p.parse::<u32>().unwrap_or(0)).collect()
 }
 
-/// Localiza TODOS los runtimes standalone coherentes (exe + helper presentes),
-/// ordenados de más nuevo a más viejo.
+/// Localiza TODOS los runtimes standalone coherentes (exe + helper presentes y
+/// canonicalizables), ordenados de más nuevo a más viejo. No prueba el sandbox
+/// (eso lo hace `discover`).
 pub fn locate_all() -> Vec<CodexRuntime> {
     let mut out = Vec::new();
     let Some(dir) = releases_dir() else { return out };
@@ -72,7 +82,13 @@ pub fn locate_all() -> Vec<CodexRuntime> {
         let exe = rel.join("bin").join("codex.exe");
         let res = rel.join("codex-resources");
         let helper = res.join("codex-windows-sandbox-setup.exe");
-        // Pareja COHERENTE: exe y helper de la misma release.
+        // Pareja COHERENTE: exe y helper existen y se pueden canonicalizar
+        // (fail-closed: si no se canonicaliza, se descarta).
+        let (Ok(exe), Ok(res), Ok(helper)) =
+            (exe.canonicalize(), res.canonicalize(), helper.canonicalize())
+        else {
+            continue;
+        };
         if exe.is_file() && helper.is_file() {
             out.push(CodexRuntime {
                 executable: exe,
@@ -86,31 +102,100 @@ pub fn locate_all() -> Vec<CodexRuntime> {
     out
 }
 
-/// El runtime coherente más nuevo disponible, si hay alguno.
-pub fn best() -> Option<CodexRuntime> {
-    locate_all().into_iter().next()
+/// Selector definitivo: prueba cada release coherente de más nueva a más vieja,
+/// verifica que la versión del EJECUTABLE coincida, y devuelve la primera con
+/// sandbox operativo (Elevated preferido, luego Unelevated). La release más
+/// nueva puede tener el helper pero un sandbox roto: por eso se prueba, no se
+/// asume.
+pub fn discover() -> Option<ValidatedCodexRuntime> {
+    for rt in locate_all() {
+        if !rt.version_matches_executable() {
+            continue;
+        }
+        match rt.probe() {
+            SandboxCapability::Elevated => {
+                return Some(ValidatedCodexRuntime { runtime: rt, mode: SandboxMode::Elevated })
+            }
+            SandboxCapability::Unelevated => {
+                return Some(ValidatedCodexRuntime { runtime: rt, mode: SandboxMode::Unelevated })
+            }
+            SandboxCapability::Unavailable => continue,
+        }
+    }
+    None
 }
 
 impl CodexRuntime {
-    /// PATH que antepone `bin` y `codex-resources` de ESTA release al PATH actual,
-    /// para que el exe encuentre su helper emparejado y no otro desemparejado.
-    fn controlled_path(&self) -> std::ffi::OsString {
+    /// Verifica que `bin\codex.exe` corresponda REALMENTE a la versión de la
+    /// carpeta ejecutando `--version` (no basta el nombre del directorio).
+    pub fn version_matches_executable(&self) -> bool {
+        match Command::new(&self.executable).arg("--version").output() {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).contains(&self.version),
+            Err(_) => false,
+        }
+    }
+
+    /// PATH filtrado: antepone `bin` + `codex-resources` de ESTA release, y del
+    /// PATH heredado descarta entradas relativas, vacías, no canonicalizables o
+    /// que caigan dentro de `deny_roots` (repo/worktrees). Fail-closed: un fallo
+    /// de `join_paths` es error, NO se restaura el PATH inseguro.
+    fn filtered_path(&self, deny_roots: &[&Path]) -> Result<OsString, String> {
         let bin = self
             .executable
             .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_default();
-        let orig = std::env::var_os("PATH").unwrap_or_default();
+            .ok_or("el exe de codex no tiene directorio padre")?
+            .to_path_buf();
         let mut parts = vec![bin, self.resources_dir.clone()];
-        parts.extend(std::env::split_paths(&orig));
-        std::env::join_paths(parts).unwrap_or(orig)
+        if let Some(orig) = std::env::var_os("PATH") {
+            for d in std::env::split_paths(&orig) {
+                if d.as_os_str().is_empty() || !d.is_absolute() {
+                    continue;
+                }
+                let Ok(cd) = d.canonicalize() else { continue };
+                // fail-closed: si no se puede comprobar contención, se excluye.
+                let inside_denied = deny_roots
+                    .iter()
+                    .any(|r| trusted_exec::is_inside(&cd, r).unwrap_or(true));
+                if inside_denied {
+                    continue;
+                }
+                parts.push(cd);
+            }
+        }
+        std::env::join_paths(parts).map_err(|e| format!("join_paths falló: {e}"))
     }
 
-    /// `Command` para `codex sandbox` con el exe ABSOLUTO, PATH controlado y el
-    /// modo pedido. El llamador agrega `--`, programa y argumentos.
-    pub fn sandbox_command(&self, mode: SandboxMode) -> Command {
+    /// `Command` para `codex sandbox` con exe absoluto, PATH filtrado, entorno
+    /// MÍNIMO (sin secretos: `env_clear` + allowlist) y TEMP/TMP redirigidos a un
+    /// directorio controlado. El llamador agrega `--`, programa y argumentos.
+    fn sandbox_command(
+        &self,
+        mode: SandboxMode,
+        cwd: &Path,
+        temp_dir: &Path,
+        deny_roots: &[&Path],
+    ) -> Result<Command, String> {
+        std::fs::create_dir_all(temp_dir)
+            .map_err(|e| format!("no se pudo crear temp {temp_dir:?}: {e}"))?;
+        let path = self.filtered_path(deny_roots)?;
+
         let mut c = Command::new(&self.executable);
-        c.env("PATH", self.controlled_path());
+        // Entorno explícito: elimina API keys, tokens y credenciales heredadas.
+        c.env_clear();
+        c.env("PATH", path);
+        // Allowlist mínima NO secreta que Windows/Codex necesitan para arrancar.
+        for k in [
+            "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "SystemDrive",
+            "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA",
+            "CODEX_HOME", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS",
+        ] {
+            if let Some(v) = std::env::var_os(k) {
+                c.env(k, v);
+            }
+        }
+        c.env("TEMP", temp_dir);
+        c.env("TMP", temp_dir);
+        c.current_dir(cwd);
         if let SandboxMode::Unelevated = mode {
             c.args(["-c", "windows.sandbox=\"unelevated\""]);
         }
@@ -120,27 +205,27 @@ impl CodexRuntime {
             use std::os::windows::process::CommandExt;
             c.creation_flags(0x0800_0000);
         }
-        c
+        Ok(c)
     }
 
-    /// Ejecuta un comando dentro del sandbox de Codex. Devuelve el exit code REAL
-    /// del proceso (sin modelo de por medio). Éste es el runner determinista.
+    /// Ejecuta `program args` dentro del sandbox de Codex (exit code REAL, sin
+    /// modelo). `deny_roots` son el repo y sus worktrees (para filtrar el PATH).
     pub fn run_sandboxed(
         &self,
         mode: SandboxMode,
         program: &Path,
         args: &[&str],
         cwd: &Path,
-    ) -> Result<std::process::Output, String> {
-        let mut c = self.sandbox_command(mode);
+        temp_dir: &Path,
+        deny_roots: &[&Path],
+    ) -> Result<Output, String> {
+        let mut c = self.sandbox_command(mode, cwd, temp_dir, deny_roots)?;
         c.arg("--").arg(program);
         c.args(args);
-        c.current_dir(cwd);
         c.output().map_err(|e| format!("codex sandbox falló: {e}"))
     }
 
-    /// Prueba la disponibilidad del sandbox ejecutando un comando trivial.
-    /// Prefiere elevado; si no, unelevated; si ninguno, Unavailable.
+    /// Prueba disponibilidad ejecutando un comando trivial. Elevated preferido.
     pub fn probe(&self) -> SandboxCapability {
         if self.probe_mode(SandboxMode::Elevated) {
             SandboxCapability::Elevated
@@ -154,10 +239,15 @@ impl CodexRuntime {
     fn probe_mode(&self, mode: SandboxMode) -> bool {
         let marker = "NEXORA_SANDBOX_OK";
         let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
-        let cmd_exe = format!("{windir}\\System32\\cmd.exe");
-        let mut c = self.sandbox_command(mode);
-        c.args(["--", &cmd_exe, "/c", "echo", marker]);
-        match c.output() {
+        let cmd_exe = PathBuf::from(format!("{windir}\\System32\\cmd.exe"));
+        match self.run_sandboxed(
+            mode,
+            &cmd_exe,
+            &["/c", "echo", marker],
+            &std::env::temp_dir(),
+            &std::env::temp_dir(),
+            &[],
+        ) {
             Ok(o) => o.status.success() && String::from_utf8_lossy(&o.stdout).contains(marker),
             Err(_) => false,
         }
@@ -182,31 +272,30 @@ mod tests {
 
     #[test]
     fn locate_returns_coherent_pairs_when_present() {
-        // Dependiente del entorno: si hay releases, cada runtime debe ser una
-        // pareja REAL (exe + helper existen). Si no hay, la lista es vacía.
         for rt in locate_all() {
             assert!(rt.executable.is_file(), "exe debe existir: {:?}", rt.executable);
             assert!(rt.sandbox_helper.is_file(), "helper debe existir: {:?}", rt.sandbox_helper);
+            assert!(rt.executable.is_absolute() && rt.resources_dir.is_absolute());
             assert!(!rt.version.is_empty());
         }
     }
 
-    // Prueba VIVA (ignorada por defecto: lanza codex y depende del entorno).
-    // Ejecutar con: cargo test live_sandbox_probe -- --ignored --nocapture
+    // Prueba VIVA (ignorada por defecto). Verifica que, CON entorno mínimo
+    // (env_clear + allowlist) y PATH filtrado, el sandbox sigue operativo.
+    // Ejecutar: cargo test live_discover -- --ignored --nocapture
     #[test]
     #[ignore]
-    fn live_sandbox_probe() {
-        let rt = best().expect("debe haber un runtime standalone coherente");
-        eprintln!("runtime: {:?} v{}", rt.executable, rt.version);
-        let cap = rt.probe();
-        eprintln!("capability: {cap:?}");
-        assert_ne!(cap, SandboxCapability::Unavailable, "el sandbox emparejado debe estar disponible");
+    fn live_discover() {
+        let v = discover().expect("debe descubrir un runtime con sandbox operativo");
+        eprintln!("runtime: {:?} v{} mode={:?}", v.runtime.executable, v.runtime.version, v.mode);
 
-        // ejecución determinista real dentro del sandbox
+        // ejecución determinista real con entorno mínimo
         let windir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into());
-        let cmd_exe = std::path::PathBuf::from(format!("{windir}\\System32\\cmd.exe"));
-        let out = rt
-            .run_sandboxed(SandboxMode::Elevated, &cmd_exe, &["/c", "echo", "NEXORA_RUN_OK"], &std::env::temp_dir())
+        let cmd_exe = PathBuf::from(format!("{windir}\\System32\\cmd.exe"));
+        let tmp = std::env::temp_dir().join("nexora_val_tmp");
+        let out = v
+            .runtime
+            .run_sandboxed(v.mode, &cmd_exe, &["/c", "echo", "NEXORA_RUN_OK"], &std::env::temp_dir(), &tmp, &[])
             .expect("run_sandboxed");
         assert!(out.status.success());
         assert!(String::from_utf8_lossy(&out.stdout).contains("NEXORA_RUN_OK"));
