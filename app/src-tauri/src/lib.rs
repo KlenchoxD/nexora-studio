@@ -7,6 +7,8 @@ pub mod agents;
 pub mod commands;
 pub mod db;
 pub mod events;
+pub mod git;
+pub mod path_policy;
 pub mod runner;
 pub mod terminal;
 pub mod worktree;
