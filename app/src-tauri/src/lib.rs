@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 pub mod agents;
+pub mod codex_runtime;
 pub mod commands;
 pub mod db;
 pub mod events;
