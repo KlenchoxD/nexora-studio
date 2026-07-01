@@ -62,6 +62,23 @@ pub fn is_inside(exe: &Path, dir: &Path) -> bool {
     }
 }
 
+/// Resuelve `program` y RECHAZA si su ruta canónica cae dentro de cualquiera de
+/// `deny_roots` (repo y sus worktrees). Exponer `is_inside` no basta: el runner
+/// debe aplicar esta comprobación a cada ejecutable que vaya a lanzar (git,
+/// codex, claude, node, npm), para que un binario suplantado dentro del proyecto
+/// nunca se ejecute.
+pub fn resolve_outside(program: &str, deny_roots: &[&Path]) -> Result<PathBuf, String> {
+    let exe = resolve(program)?;
+    for root in deny_roots {
+        if is_inside(&exe, root) {
+            return Err(format!(
+                "'{program}' resuelto en {exe:?} está dentro de {root:?}: posible suplantación, se rechaza"
+            ));
+        }
+    }
+    Ok(exe)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,5 +106,23 @@ mod tests {
         assert!(is_inside(&f, &base));
         assert!(!is_inside(&base, &inside));
         std::fs::remove_dir_all(&inside).ok();
+    }
+
+    #[test]
+    fn resolve_outside_rejects_binary_inside_deny_root() {
+        // git legítimo resuelto desde PATH NO está dentro de un worktree ajeno.
+        let elsewhere = std::env::temp_dir().join("nexora_ro_repo");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        if let Ok(p) = resolve_outside("git", &[&elsewhere]) {
+            assert!(p.is_absolute());
+        }
+        // Si el deny_root fuese un ancestro del git resuelto, debe rechazar.
+        // Simulamos con el ancestro real del binario resuelto.
+        if let Ok(git) = resolve("git") {
+            if let Some(parent) = git.parent() {
+                assert!(resolve_outside("git", &[parent]).is_err());
+            }
+        }
+        std::fs::remove_dir_all(&elsewhere).ok();
     }
 }
