@@ -46,6 +46,68 @@ pub struct ValidationEvidence {
     pub head_changed: bool,
     pub changed: Vec<ChangedFile>,
     pub timed_out: bool,
+    /// Modo de seguridad efectivo y garantía por dimensión: Nexora NUNCA afirma
+    /// más aislamiento del verificado.
+    pub security_mode: ValidationSecurityMode,
+    pub assurance: ValidationAssurance,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum ValidationSecurityMode {
+    /// Backend elevado con perfil que deniega temp global. UAC de setup único.
+    StrictElevated,
+    /// Fallback sin UAC; NO deniega temp global ni aísla red del todo. Solo para
+    /// repos que el usuario marque como confiables.
+    CompatibleUnelevated,
+    /// Backend Linux vía WSL2.
+    Wsl2,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub enum AssuranceState {
+    Verified,
+    Partial,
+    Unverified,
+    Unavailable,
+}
+
+/// Garantía de aislamiento por dimensión (honesta, verificada empíricamente).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ValidationAssurance {
+    pub workspace_write_boundary: AssuranceState,
+    pub git_write_protection: AssuranceState,
+    pub environment_secrets_removed: AssuranceState,
+    pub global_temp_isolation: AssuranceState,
+    pub network_isolation: AssuranceState,
+}
+
+impl ValidationAssurance {
+    /// StrictElevated (verificado): worktree/git/temp/env aislados; red PARCIAL
+    /// (TCP/HTTPS bloqueado, ICMP residual).
+    pub fn strict_elevated() -> Self {
+        use AssuranceState::*;
+        Self {
+            workspace_write_boundary: Verified,
+            git_write_protection: Verified,
+            environment_secrets_removed: Verified,
+            global_temp_isolation: Verified,
+            network_isolation: Partial,
+        }
+    }
+
+    /// CompatibleUnelevated: temp global escribible (no se puede denegar sin
+    /// elevated) y red no verificada. NO usar con código no confiable.
+    pub fn compatible_unelevated() -> Self {
+        use AssuranceState::*;
+        Self {
+            workspace_write_boundary: Verified,
+            git_write_protection: Verified,
+            environment_secrets_removed: Verified,
+            global_temp_isolation: Unavailable,
+            network_isolation: Unverified,
+        }
+    }
 }
 
 /// Decisión pura a partir de la evidencia observada (testeable sin sandbox).
@@ -159,7 +221,18 @@ pub fn run(
 
     Ok((
         outcome,
-        ValidationEvidence { exit_code, stdout, stderr, head_changed, changed, timed_out },
+        ValidationEvidence {
+            exit_code,
+            stdout,
+            stderr,
+            head_changed,
+            changed,
+            timed_out,
+            // El CODEX_HOME administrado usa el perfil elevado; la garantía se
+            // reporta honestamente (red PARCIAL por ICMP residual).
+            security_mode: ValidationSecurityMode::StrictElevated,
+            assurance: ValidationAssurance::strict_elevated(),
+        },
     ))
 }
 

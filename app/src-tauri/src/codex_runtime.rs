@@ -142,14 +142,21 @@ pub fn managed_codex_home() -> Result<PathBuf, String> {
     // ponytail: el bloqueo de red por config no frenó ICMP en las pruebas; se
     // conserva `network.enabled=false` (puede limitar sockets) y se revisará si
     // hace falta aislamiento de red más fuerte.
-    // unelevated: token restringido, SIN UAC. `elevated` lanza el helper vía
-    // ShellExecuteExW con elevación → prompt de UAC (y falla 1223/ERROR_CANCELLED
-    // en no-interactivo o en paralelo). Para validación automatizada, unelevated.
+    // StrictElevated (verificado empíricamente): el backend `elevated` SÍ aplica
+    // reglas divididas (denegar :tmpdir/:slash_tmp cierra el escape a %TEMP%
+    // global) y bloquea TCP/HTTPS. El UAC es de SETUP ÚNICO: con este CODEX_HOME
+    // persistente, tras aprobarlo una vez, las validaciones (secuenciales y
+    // concurrentes) NO vuelven a pedir UAC. unelevated NO puede denegar el temp
+    // ("requires elevated backend") y tiene red más débil, por eso no es el modo
+    // estricto. `.git`/`.codex` ya los protege `:workspace`.
     let cfg = "[windows]\n\
-        sandbox = \"unelevated\"\n\n\
+        sandbox = \"elevated\"\n\n\
         [permissions.nexora-validation]\n\
         description = \"Validacion aislada en un worktree desechable\"\n\
         extends = \":workspace\"\n\n\
+        [permissions.nexora-validation.filesystem]\n\
+        \":tmpdir\" = \"deny\"\n\
+        \":slash_tmp\" = \"deny\"\n\n\
         [permissions.nexora-validation.network]\n\
         enabled = false\n";
     let cfg_path = home.join("config.toml");
