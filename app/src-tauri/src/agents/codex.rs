@@ -15,9 +15,12 @@ impl AgentAdapter for Codex {
     fn capabilities(&self) -> &'static [&'static str] {
         &["backend", "architecture", "tests", "refactor"]
     }
-    fn build_command(&self, prompt: &str, dir: &Path, _safe: bool) -> Command {
+    fn build_command(&self, _prompt: &str, dir: &Path, _safe: bool) -> Command {
         // _safe: el sandbox de Windows de Codex no arranca (helper ausente), así que
         // el modo seguro de Codex se refuerza vía prompt, no con flag de sandbox.
+        // El prompt va por STDIN (no como argumento): `codex exec` sin PROMPT lee las
+        // instrucciones de stdin. Así un prompt multilínea no se trunca al pasar por
+        // `cmd /c` en Windows (cmd corta la línea en el primer salto de línea).
         let d = dir.to_string_lossy().into_owned();
         // -s danger-full-access: el sandbox de Windows (codex-windows-sandbox-setup.exe)
         // no arranca en muchas instalaciones ("program not found"), lo que bloquea TODA
@@ -28,16 +31,18 @@ impl AgentAdapter for Codex {
         let mut c = {
             let mut c = Command::new("cmd");
             c.args(["/c", "codex", "exec", "--json", "-s", "danger-full-access",
-                "--skip-git-repo-check", "-C", d.as_str(), prompt]);
+                "--skip-git-repo-check", "-C", d.as_str()]);
             c
         };
         #[cfg(not(windows))]
         let mut c = {
             let mut c = Command::new("codex");
-            c.args(["exec", "--json", "-s", "danger-full-access", "--skip-git-repo-check", "-C", d.as_str(), prompt]);
+            c.args(["exec", "--json", "-s", "danger-full-access", "--skip-git-repo-check", "-C", d.as_str()]);
             c
         };
-        c.stdin(Stdio::null()); // codex se cuelga esperando stdin
+        // stdin abierto: start_task escribe el prompt y CIERRA el pipe (EOF). Sin EOF
+        // codex se colgaría esperando más entrada; con EOF lee el prompt y arranca.
+        c.stdin(Stdio::piped());
         // CREATE_NO_WINDOW: evita que `cmd /c` abra una ventana de consola visible.
         #[cfg(windows)]
         {

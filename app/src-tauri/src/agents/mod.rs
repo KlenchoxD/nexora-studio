@@ -45,6 +45,9 @@ mod tests {
         assert!(a.contains(&"-p".to_string()));
         assert!(a.contains(&"stream-json".to_string()));
         assert!(a.contains(&"--output-format".to_string()));
+        // El prompt va por stdin, NUNCA como argumento: si vuelve a args, un prompt
+        // multilínea rompe cmd.exe y se pierden los flags -> salida en texto plano.
+        assert!(!a.contains(&"hola".to_string()));
     }
 
     #[test]
@@ -56,5 +59,7 @@ mod tests {
         assert!(a.contains(&"exec".to_string()));
         assert!(a.contains(&"--json".to_string()));
         assert!(a.contains(&"-C".to_string()));
+        // El prompt va por stdin, NUNCA como argumento (ver test de Claude).
+        assert!(!a.contains(&"hola".to_string()));
     }
 }

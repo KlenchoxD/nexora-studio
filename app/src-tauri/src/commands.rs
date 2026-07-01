@@ -161,6 +161,16 @@ pub fn start_task(
     let mut cmd = adapter.build_command(&prompt, &dir, safe.unwrap_or(false));
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("spawn falló: {e}"))?;
+    // El prompt se envía por STDIN (evita que cmd.exe corte prompts multilínea en
+    // Windows). Se escribe en un hilo aparte para no deadlockear con el stdout del
+    // hijo, y al soltar el pipe se cierra (EOF) para que el agente sepa que terminó.
+    if let Some(mut si) = child.stdin.take() {
+        use std::io::Write;
+        let p = prompt.clone();
+        std::thread::spawn(move || {
+            let _ = si.write_all(p.as_bytes());
+        });
+    }
     let stdout = child.stdout.take().ok_or("sin stdout")?;
     let stderr = child.stderr.take().ok_or("sin stderr")?;
 
