@@ -125,6 +125,42 @@ pub fn discover() -> Option<ValidatedCodexRuntime> {
     None
 }
 
+/// Nombre del permission profile de validación (definido en el CODEX_HOME
+/// administrado por Nexora).
+pub const VALIDATION_PROFILE: &str = "nexora-validation";
+
+/// CODEX_HOME administrado por Nexora (separado de la config personal), con el
+/// perfil `nexora-validation` que extiende `:workspace`: escritura confinada al
+/// worktree (+temp), bloqueando archivos reales del usuario y `.git`. Verificado
+/// empíricamente. Se crea/actualiza el config.toml de forma idempotente.
+pub fn managed_codex_home() -> Result<PathBuf, String> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or("no se encontró LOCALAPPDATA")?;
+    let home = PathBuf::from(base).join("NexoraStudio").join("codex-validation");
+    std::fs::create_dir_all(&home).map_err(|e| format!("crear codex-home: {e}"))?;
+    // ponytail: el bloqueo de red por config no frenó ICMP en las pruebas; se
+    // conserva `network.enabled=false` (puede limitar sockets) y se revisará si
+    // hace falta aislamiento de red más fuerte.
+    // unelevated: token restringido, SIN UAC. `elevated` lanza el helper vía
+    // ShellExecuteExW con elevación → prompt de UAC (y falla 1223/ERROR_CANCELLED
+    // en no-interactivo o en paralelo). Para validación automatizada, unelevated.
+    let cfg = "[windows]\n\
+        sandbox = \"unelevated\"\n\n\
+        [permissions.nexora-validation]\n\
+        description = \"Validacion aislada en un worktree desechable\"\n\
+        extends = \":workspace\"\n\n\
+        [permissions.nexora-validation.network]\n\
+        enabled = false\n";
+    let cfg_path = home.join("config.toml");
+    // escribe solo si cambió (idempotente)
+    let need = std::fs::read_to_string(&cfg_path).map(|c| c != cfg).unwrap_or(true);
+    if need {
+        std::fs::write(&cfg_path, cfg).map_err(|e| format!("escribir config.toml: {e}"))?;
+    }
+    Ok(home)
+}
+
 impl CodexRuntime {
     /// Verifica que `bin\codex.exe` corresponda REALMENTE a la versión de la
     /// carpeta ejecutando `--version` (no basta el nombre del directorio).
@@ -225,6 +261,53 @@ impl CodexRuntime {
         Ok(c)
     }
 
+    /// `Command` de VALIDACIÓN: `codex sandbox -P nexora-validation -C cwd --
+    /// program args`, con CODEX_HOME administrado (perfil que confina escritura
+    /// al worktree). El perfil es el mecanismo correcto de escritura controlada
+    /// en 0.142.3 (NO `sandbox_permissions`). Entorno mínimo + PATH filtrado.
+    pub fn validation_command(
+        &self,
+        program: &Path,
+        args: &[&str],
+        cwd: &Path,
+        deny_roots: &[&Path],
+    ) -> Result<Command, String> {
+        let codex_home = managed_codex_home()?;
+        let path = self.filtered_path(deny_roots)?;
+
+        let mut c = Command::new(&self.executable);
+        c.env_clear();
+        c.env("PATH", path);
+        c.env("CODEX_HOME", &codex_home); // config personal NO se usa
+        // Allowlist NO secreta. Incluye TEMP/TMP del sistema: el helper de setup
+        // del sandbox los necesita para crear sus binarios (redirigirlos al
+        // worktree rompe el setup: orchestrator_helper_incomplete). El perfil
+        // `:workspace` ya permite escritura en temp, así que el temp de los tests
+        // queda igualmente contenido/ephemeral.
+        for k in [
+            "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "SystemDrive",
+            "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA", "LOCALAPPDATA",
+            "TEMP", "TMP", "USERNAME", "USERDOMAIN", "SESSIONNAME",
+            "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE", "OS",
+        ] {
+            if let Some(v) = std::env::var_os(k) {
+                c.env(k, v);
+            }
+        }
+        c.arg("sandbox");
+        c.args(["-P", VALIDATION_PROFILE]);
+        c.arg("-C").arg(cwd);
+        c.arg("--").arg(program);
+        c.args(args);
+        c.current_dir(cwd);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            c.creation_flags(0x0800_0000);
+        }
+        Ok(c)
+    }
+
     /// Ejecuta `program args` dentro del sandbox de Codex (exit code REAL, sin
     /// modelo). `deny_roots` son el repo y sus worktrees (para filtrar el PATH).
     pub fn run_sandboxed(
@@ -241,12 +324,14 @@ impl CodexRuntime {
             .map_err(|e| format!("codex sandbox falló: {e}"))
     }
 
-    /// Prueba disponibilidad ejecutando un comando trivial. Elevated preferido.
+    /// Prueba disponibilidad ejecutando un comando trivial. Prefiere UNELEVATED:
+    /// no dispara UAC (elevated usa ShellExecuteExW con elevación → prompt de UAC
+    /// y falla en no-interactivo/paralelo con 1223). La validación usa unelevated.
     pub fn probe(&self) -> SandboxCapability {
-        if self.probe_mode(SandboxMode::Elevated) {
-            SandboxCapability::Elevated
-        } else if self.probe_mode(SandboxMode::Unelevated) {
+        if self.probe_mode(SandboxMode::Unelevated) {
             SandboxCapability::Unelevated
+        } else if self.probe_mode(SandboxMode::Elevated) {
+            SandboxCapability::Elevated
         } else {
             SandboxCapability::Unavailable
         }

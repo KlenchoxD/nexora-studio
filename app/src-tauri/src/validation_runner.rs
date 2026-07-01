@@ -33,6 +33,9 @@ pub enum ValidationOutcome {
     TimedOut,
     /// No hay runtime de sandbox operativo en esta máquina.
     Unavailable,
+    /// No se pudo inspeccionar el estado git tras la ejecución (error de
+    /// infraestructura): fail-closed, NUNCA se aprueba sin verificar.
+    Unverified,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -92,23 +95,34 @@ pub fn run(
 
     // deny_roots para el PATH filtrado: repo y worktree de validación.
     let deny: Vec<&Path> = vec![repo_root, wt_path];
-    let temp_dir = wt_path.join(".nexora-tmp");
 
     let args: Vec<&str> = program.args.iter().map(|s| s.as_str()).collect();
     let mut child = validated
         .runtime
-        .command(
-            validated.mode,
-            &program.executable,
-            &args,
-            wt_path,
-            &temp_dir,
-            &deny,
-        )?
+        .validation_command(&program.executable, &args, wt_path, &deny)?
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| format!("no se pudo lanzar la validación: {e}"))?;
+
+    // Drenar stdout/stderr CONCURRENTEMENTE en hilos: si esperáramos al proceso
+    // con las tuberías llenas sin leer, se produciría un deadlock.
+    use std::io::Read;
+    let drain = |s: Option<std::process::ChildStdout>| {
+        s.map(|mut s| std::thread::spawn(move || {
+            let mut b = String::new();
+            let _ = s.read_to_string(&mut b);
+            b
+        }))
+    };
+    let out_h = drain(child.stdout.take());
+    let err_h = child.stderr.take().map(|mut s| {
+        std::thread::spawn(move || {
+            let mut b = String::new();
+            let _ = s.read_to_string(&mut b);
+            b
+        })
+    });
 
     let (timed_out, exit_code) = match child
         .wait_timeout(timeout)
@@ -123,16 +137,20 @@ pub fn run(
             (true, None)
         }
     };
+    let stdout = out_h.and_then(|h| h.join().ok()).unwrap_or_default();
+    let stderr = err_h.and_then(|h| h.join().ok()).unwrap_or_default();
 
-    let (stdout, stderr) = read_child_output(&mut child);
-
-    // Verificación determinista del estado git tras la ejecución.
-    let head_after = git::head_commit(wt_path).unwrap_or_default();
-    let head_changed = head_after != candidate_commit;
-    let changed = git::changed_files(wt_path).unwrap_or_default();
-    let unexpected = spec.has_unexpected_changes(&changed);
-
-    let outcome = classify(timed_out, exit_code, head_changed, unexpected);
+    // Verificación determinista del estado git tras la ejecución. FAIL-CLOSED:
+    // si no se puede leer HEAD o el status, NO se aprueba (Unverified).
+    let git_state = git::head_commit(wt_path).and_then(|h| git::changed_files(wt_path).map(|c| (h, c)));
+    let (outcome, head_changed, changed) = match git_state {
+        Ok((head_after, changed)) => {
+            let head_changed = head_after != candidate_commit;
+            let unexpected = spec.has_unexpected_changes(&changed);
+            (classify(timed_out, exit_code, head_changed, unexpected), head_changed, changed)
+        }
+        Err(_) => (ValidationOutcome::Unverified, false, Vec::new()),
+    };
 
     // Conservar el worktree como evidencia si NO aprobó; limpiar si Passed.
     if outcome == ValidationOutcome::Passed {
@@ -145,32 +163,23 @@ pub fn run(
     ))
 }
 
-fn read_child_output(child: &mut std::process::Child) -> (String, String) {
-    use std::io::Read;
-    let mut out = String::new();
-    let mut err = String::new();
-    if let Some(mut s) = child.stdout.take() {
-        let _ = s.read_to_string(&mut out);
-    }
-    if let Some(mut s) = child.stderr.take() {
-        let _ = s.read_to_string(&mut err);
-    }
-    (out, err)
-}
-
-/// Mata el árbol de procesos por PID. En Windows `taskkill /T /F` termina hijos.
+/// Mata el árbol de procesos por PID con `taskkill.exe` ABSOLUTO (no relativo,
+/// para no arriesgar suplantación desde el cwd). `/T /F` termina los hijos.
 fn kill_tree(pid: u32) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let _ = std::process::Command::new("taskkill")
+        let taskkill = PathBuf::from(std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into()))
+            .join("System32")
+            .join("taskkill.exe");
+        let _ = std::process::Command::new(taskkill)
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .creation_flags(0x0800_0000)
             .output();
     }
     #[cfg(not(windows))]
     {
-        let _ = std::process::Command::new("kill")
+        let _ = std::process::Command::new("/bin/kill")
             .args(["-9", &pid.to_string()])
             .output();
     }
@@ -236,7 +245,7 @@ mod tests {
             args: vec!["/c".into(), "echo".into(), "ok".into()],
         };
         let (outcome, ev) = run(&v, &repo, &base, &wt, "nexora/val/ok", &prog, &spec(), Duration::from_secs(60)).unwrap();
-        eprintln!("outcome={outcome:?} exit={:?}", ev.exit_code);
+        eprintln!("outcome={outcome:?} exit={:?}\nSTDOUT={}\nSTDERR={}", ev.exit_code, ev.stdout, ev.stderr);
         assert_eq!(outcome, ValidationOutcome::Passed);
         std::fs::remove_dir_all(&repo).ok();
     }
@@ -257,13 +266,50 @@ mod tests {
         std::fs::remove_dir_all(&repo).ok();
     }
 
-    // ponytail: los canarios que dependen de ESCRITURA dentro del sandbox
-    // (fuente modificada -> PolicyViolation, escritura fuera -> bloqueada) están
-    // PENDIENTES: en esta máquina `codex sandbox` corre read-only y ningún token
-    // `sandbox_permissions` (disk-write-cwd/disk-full-write-access/workspace-write)
-    // concede escritura ("Acceso denegado"). Hasta resolver la config de
-    // permisos de escritura (probablemente un --permissions-profile en
-    // config.toml), esos canarios no se pueden ejercitar en vivo. La LÓGICA de
-    // PolicyViolation por cambios inesperados/HEAD movido ya está cubierta de
-    // forma determinista por `classify_covers_all_outcomes`.
+    fn cmd_exe() -> PathBuf {
+        PathBuf::from(std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".into()))
+            .join("System32")
+            .join("cmd.exe")
+    }
+
+    // Escritura DENTRO del worktree de un archivo NO permitido (app.js.bak fuera
+    // de coverage/**) con exit 0 -> PolicyViolation. Prueba que el sandbox SÍ
+    // deja escribir el workspace (perfil nexora-validation) y que el runner
+    // detecta el cambio inesperado.
+    #[test]
+    #[ignore]
+    fn canary_source_modified_is_policy_violation() {
+        let Some((v, repo, base)) = setup() else { return };
+        let wt = std::env::temp_dir().join(format!("nexora_vwt_{}", uuid::Uuid::new_v4()));
+        let prog = SandboxedProgram {
+            executable: cmd_exe(),
+            args: vec!["/c".into(), "copy".into(), "/y".into(), "app.js".into(), "app.js.bak".into()],
+        };
+        let (outcome, ev) = run(&v, &repo, &base, &wt, "nexora/val/src", &prog, &spec(), Duration::from_secs(60)).unwrap();
+        eprintln!("outcome={outcome:?} exit={:?} changed={:?} stderr={}", ev.exit_code, ev.changed, ev.stderr);
+        assert_eq!(outcome, ValidationOutcome::PolicyViolation);
+        git::remove_worktree(&repo, &wt).ok();
+        std::fs::remove_dir_all(&repo).ok();
+    }
+
+    // Intento de escribir FUERA del worktree (archivo real). El sandbox lo
+    // bloquea: el archivo externo NO se crea. (El comando falla -> Failed, pero
+    // lo esencial es la contención: nada se escribió fuera.)
+    #[test]
+    #[ignore]
+    fn canary_escape_write_is_contained() {
+        let Some((v, repo, base)) = setup() else { return };
+        let wt = std::env::temp_dir().join(format!("nexora_vwt_{}", uuid::Uuid::new_v4()));
+        let escape = std::path::PathBuf::from(std::env::var("USERPROFILE").unwrap())
+            .join("Documents")
+            .join(format!("NEXORA_ESCAPE_{}.txt", uuid::Uuid::new_v4()));
+        let prog = SandboxedProgram {
+            executable: cmd_exe(),
+            args: vec!["/c".into(), "copy".into(), "app.js".into(), escape.to_string_lossy().into()],
+        };
+        let _ = run(&v, &repo, &base, &wt, "nexora/val/escape", &prog, &spec(), Duration::from_secs(60)).unwrap();
+        assert!(!escape.exists(), "el sandbox permitió escribir FUERA del worktree: {escape:?}");
+        git::remove_worktree(&repo, &wt).ok();
+        std::fs::remove_dir_all(&repo).ok();
+    }
 }
